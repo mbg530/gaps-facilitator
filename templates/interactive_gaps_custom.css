@@ -1,0 +1,64 @@
+#interactive-gaps-chat {
+    overflow-y: auto;
+    max-height: 350px;
+    min-height: 120px;
+    word-break: break-word;
+    white-space: pre-wrap;
+    padding: 1em;
+    background: #f9f9fb;
+    border-radius: 8px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.03);
+}
+
+/* --- AI Suggestion Box Styling --- */
+#ai-suggestion-box {
+    margin-top: 0.7em;
+    background: none;
+    border: none;
+    box-shadow: none;
+    padding: 0;
+}
+
+#ai-suggestion-box > div {
+    border: none !important;
+    box-shadow: none !important;
+    background: #f5faff;
+    border-radius: 6px;
+    margin-bottom: 0.3em;
+    padding: 0.3em 0.5em;
+    display: flex;
+    align-items: center;
+}
+
+.ai-suggest-label {
+    margin-bottom: 0.4em;
+    font-weight: bold;
+    color: #007bff;
+    background: none;
+    border: none;
+}
+
+.ai-suggested-thought {
+    margin-left: 0.5em;
+    color: #333;
+    font-size: 1em;
+}
+
+#ai-suggestion-box button {
+    margin-left: 0.7em;
+    font-size: 0.95em;
+    padding: 0.2em 0.7em;
+    background: #007bff;
+    color: #fff;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    box-shadow: none;
+}
+
+#ai-suggestion-box button:disabled {
+    background: #5cb85c;
+    color: #fff;
+    cursor: default;
+}
+
