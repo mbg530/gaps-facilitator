@@ -43,6 +43,40 @@ def conversational_facilitator(prompt, conversation_history=None, quadrants=None
     - {'action': 'ask_clarification', 'question': ...}
     - {'action': 'classify_and_add', 'thoughts': [{'content': ..., 'quadrant': ...}, ...]}
     """
+    
+    # Handle special initial greeting request
+    if "INITIAL_GREETING_REQUEST" in prompt:
+        # Check if there are existing quadrants with data
+        has_existing_data = False
+        if quadrants:
+            for quadrant_key, items in quadrants.items():
+                if items and len(items) > 0:
+                    has_existing_data = True
+                    break
+        
+        if has_existing_data:
+            # Context-aware greeting for existing data
+            contextual_greetings = [
+                "I can see you have some thoughts already organized in your quadrants. What would you like to work on next?",
+                "I notice you've got some items in your quadrants already. What aspect would you like to explore further?",
+                "I see you have some thoughts captured here. What would you like to focus on or add to?"
+            ]
+            import random
+            greeting = random.choice(contextual_greetings)
+        else:
+            # Fresh start greeting for empty quadrants
+            fresh_greetings = [
+                "I see we're starting from scratch. Let's get started: What's on your mind today or what problem can I help with?",
+                "Looks like we have a fresh start here. What challenge or goal would you like to work on?",
+                "Starting with a clean slate! What's the main issue or opportunity you'd like to explore?"
+            ]
+            import random
+            greeting = random.choice(fresh_greetings)
+        
+        return {'action': 'ask_clarification', 'question': greeting}
+    
+    # Let AI handle all categorization - removed broken force categorization logic
+    # that was always defaulting to 'status' quadrant regardless of context
     # Load onboarding-rich system prompt
     system_prompt = load_prompt('prompts/prompts_modified.txt')
     messages = [{"role": "system", "content": system_prompt}]
@@ -116,8 +150,28 @@ def conversational_facilitator(prompt, conversation_history=None, quadrants=None
                 thought = m.group(2).strip().strip('.')
                 if thought:
                     thoughts.append({'quadrant': quadrant, 'thought': thought})
-        # If we found any, build JSON and extract the first question after those lines
-        if thoughts:
+        # Filter out meta-conversational suggestions before processing
+        meta_filters = [
+            'quadrants are currently empty',
+            'quadrants are empty', 
+            'provide recommendations for how to proceed',
+            'need recommendations',
+            'should start with goals',
+            'should start with',
+            'recommendations for how to proceed'
+        ]
+        
+        filtered_thoughts = []
+        for thought_data in thoughts:
+            thought_text = thought_data['thought'].lower()
+            is_meta = any(meta_phrase in thought_text for meta_phrase in meta_filters)
+            if not is_meta:
+                filtered_thoughts.append(thought_data)
+            else:
+                print(f"[DEBUG] Filtered out meta-suggestion: {thought_data['thought']}")
+        
+        # If we found any valid (non-meta) thoughts, build JSON and extract the first question after those lines
+        if filtered_thoughts:
             # Find the first line after the last matched quadrant line that looks like a question
             last_idx = max(i for i, line in enumerate(lines) if re.match(r'\s*(Goal|Plan|Status|Analysis)\s*:', line, re.IGNORECASE))
             question_text = ''
@@ -127,10 +181,74 @@ def conversational_facilitator(prompt, conversation_history=None, quadrants=None
             warning = "\n\n⚠️ Warning: The AI did not output a valid JSON object for quadrant assignments. Please rephrase your request or try again." if SHOW_JSON_WARNING else ""
             return {
                 'action': 'classify_and_add',
-                'thoughts': thoughts,
+                'thoughts': filtered_thoughts,
                 'reply_text': reply.strip() + warning
             }
-        # If no valid JSON block and no quadrant lines, display only the question/clarification
+        # SMART BACKEND CATEGORIZATION: If AI fails to provide JSON, analyze the original user input
+        # Extract the original user input from the prompt for intelligent categorization
+        user_input = ""
+        if "Latest User Input:" in prompt:
+            lines = prompt.split("\n")
+            for i, line in enumerate(lines):
+                if "Latest User Input:" in line and i + 1 < len(lines):
+                    user_input = lines[i + 1].strip()
+                    break
+        
+        if user_input and not '?' in user_input:
+            # Skip categorization for internal system prompts
+            system_prompt_indicators = [
+                'please summarize the current quadrant state',
+                'provide recommendations for how to proceed',
+                'output them as a json object',
+                'using the add_to_quadrant key',
+                'if you have new thoughts for any quadrant'
+            ]
+            
+            input_lower = user_input.lower()
+            
+            # Don't categorize internal system prompts
+            if any(indicator in input_lower for indicator in system_prompt_indicators):
+                # This is an internal system prompt, not a user input - don't categorize
+                pass
+            else:
+                # This is a real user input - proceed with intelligent categorization
+            
+                # PLAN indicators: need to, should, must, implement, develop, create, train, provide, etc.
+                plan_keywords = ['need to', 'should', 'must', 'implement', 'develop', 'create', 'train', 'provide', 'establish', 'build', 'design', 'plan to', 'going to', 'will']
+                
+                # GOAL indicators: want to, goal is, aim to, objective, target, improve, achieve, etc.
+                goal_keywords = ['want to', 'goal is', 'aim to', 'objective', 'target', 'improve', 'achieve', 'desire', 'hope to', 'aspire', 'increase', 'enhance', 'better', 'responsible for', 'need to develop', 'development of', 'working on', 'tasked with']
+                
+                # STATUS indicators: currently, now, is/are (present state), morale is, satisfaction is, etc.
+                status_keywords = ['currently', 'right now', ' is ', ' are ', 'morale is', 'satisfaction is', 'performance is', 'revenue is', 'status is']
+                
+                # ANALYSIS indicators: because, due to, caused by, reason, factor, reluctant, hesitant, etc.
+                analysis_keywords = ['because', 'due to', 'caused by', 'reason', 'factor', 'reluctant', 'hesitant', 'challenge', 'problem', 'issue', 'barrier']
+                
+                # Check for patterns (order matters - most specific first)
+                if any(keyword in input_lower for keyword in plan_keywords):
+                    quadrant = 'plan'
+                elif any(keyword in input_lower for keyword in goal_keywords):
+                    quadrant = 'goal'
+                elif any(keyword in input_lower for keyword in analysis_keywords):
+                    quadrant = 'analysis'
+                elif any(keyword in input_lower for keyword in status_keywords):
+                    quadrant = 'status'
+                else:
+                    # Default heuristic: if it sounds actionable, it's probably a plan
+                    if any(word in input_lower for word in ['education', 'training', 'teaching', 'learning', 'preparation']):
+                        quadrant = 'plan'
+                    else:
+                        quadrant = 'status'  # Safe default
+                
+                thoughts = [{'quadrant': quadrant, 'thought': user_input}]
+                print(f"[BACKEND] Smart categorization: '{user_input}' → {quadrant} quadrant")
+                return {
+                    'action': 'classify_and_add',
+                    'thoughts': thoughts,
+                    'reply_text': f'I\'ve categorized your input as a {quadrant.title()}: "{user_input}". What would you like to explore next?'
+                }
+        # If no user input found or it's a question, treat as clarification
         return {'action': 'ask_clarification', 'question': reply.strip()}
     except Exception as e:
         # Fallback: treat as plain text question

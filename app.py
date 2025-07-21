@@ -23,6 +23,8 @@ import openai_api
 # Maximum number of conversation turns to send to the LLM for context
 MAX_HISTORY_TURNS = 12
 import board_store
+import openai_api
+import gemini_api
 
 from sqlalchemy import event
 from sqlalchemy.engine import Engine
@@ -33,6 +35,7 @@ def set_sqlite_pragma(dbapi_connection, connection_record):
     cursor.execute("PRAGMA foreign_keys=ON")
     cursor.close()
 
+# AI Provider Setup
 AI_PROVIDER = os.environ.get("AI_PROVIDER", "gemini").lower()  # Set to 'openai' to use OpenAI
 if AI_PROVIDER == "openai":
     ai_api = openai_api
@@ -94,13 +97,14 @@ def get_boards():
 
 # Helper: get current board (by id in query param, or first board)
 def get_current_board():
-    board_id = request.args.get('board_id', type=int)
+    board_id = request.args.get('board_id')  # Remove type=int to handle UUID strings
     boards = get_boards()
     if not boards:
         return None
     if board_id:
+        # Convert board_id to appropriate type for comparison
         for b in boards:
-            if b.id == board_id:
+            if str(b.id) == str(board_id):  # Compare as strings to handle both int and UUID
                 return b
     return boards[0]
 
@@ -149,11 +153,34 @@ def facilitator():
         boards = get_boards()
         if not board and boards:
             board = boards[0]  # fallback to first available board
+        
+        # DEBUG: Log board data being passed to template
+        print(f"=== BOARD DATA DEBUG ===")
+        print(f"Board object: {board}")
+        print(f"Board type: {type(board)}")
+        if board:
+            print(f"Board attributes: {dir(board)}")
+            if hasattr(board, 'title'):
+                print(f"Board title: {board.title}")
+            if hasattr(board, 'name'):
+                print(f"Board name: {board.name}")
+            if hasattr(board, 'id'):
+                print(f"Board id: {board.id}")
+        print(f"========================")
+        
         if not board:
             return render_template('index.html', boards=[], board=None, quadrants={}, thoughts={}, version=os.environ.get('VERSION', 'dev'))
+        
+        # DEBUG: Log thoughts retrieval
+        print(f"[DEBUG] Retrieving thoughts for board {board.id}...")
+        print(f"[DEBUG] Board.thoughts count: {len(board.thoughts)}")
+        
         thoughts = {q: [] for q in ['status', 'goal', 'analysis', 'plan']}
-        for t in board.thoughts:
+        for i, t in enumerate(board.thoughts):
+            print(f"[DEBUG] Thought {i+1}: '{t.content}' in {t.quadrant} quadrant (id: {t.id})")
             thoughts[t.quadrant].append(t)
+        
+        print(f"[DEBUG] Final thoughts dict: {[(k, len(v)) for k, v in thoughts.items()]}")
         return render_template('index.html', boards=boards, board=board, quadrants=None, thoughts=thoughts, version=os.environ.get('VERSION', 'dev'))
 
 
@@ -176,14 +203,23 @@ def interactive_gaps():
         print(f"[DEBUG] Parsed user_input: {user_input}", flush=True)
         if not board_id:
             return jsonify({'error': 'Missing board_id'}), 400
-        # If user_input is empty, send a kickoff prompt to ensure quadrant-aware summary and JSON
+        # If user_input is empty, check if this is initial conversation setup
         if not user_input or not user_input.strip():
-            user_input = ("Please summarize the current quadrant state and provide recommendations for how to proceed. "
-                           "If you have new thoughts for any quadrant, output them as a JSON object at the start of your reply, "
-                           "using the 'add_to_quadrant' key.")
-        # Fetch full conversation history for context (all turns)
-        from models import ConversationTurn
-        history_turns = ConversationTurn.query.filter_by(board_id=board_id).order_by(ConversationTurn.id.asc()).all()
+            # Check if this is a fresh start (no conversation history and empty quadrants)
+            from models import ConversationTurn
+            history_turns = ConversationTurn.query.filter_by(board_id=board_id).order_by(ConversationTurn.id.asc()).all()
+            
+            if not history_turns:  # Fresh conversation start
+                user_input = "INITIAL_GREETING_REQUEST"
+            else:
+                # Existing conversation, use system prompt
+                user_input = ("Please summarize the current quadrant state and provide recommendations for how to proceed. "
+                               "If you have new thoughts for any quadrant, output them as a JSON object at the start of your reply, "
+                               "using the 'add_to_quadrant' key.")
+        # Fetch full conversation history for context (all turns) - may have been fetched above
+        if 'history_turns' not in locals():
+            from models import ConversationTurn
+            history_turns = ConversationTurn.query.filter_by(board_id=board_id).order_by(ConversationTurn.id.asc()).all()
         conversation_history = []
         for t in history_turns:
             conversation_history.append({"role": t.role, "content": t.content})
@@ -414,9 +450,35 @@ def interactive_gaps():
             # If no JSON at the start, just return the message
             return None, reply_text.strip()
         suggestions, reply_text_clean = extract_json_and_message(reply_text)
+        
+        # Filter out meta-conversational suggestions from JSON
+        if suggestions and 'add_to_quadrant' in suggestions:
+            meta_filters = [
+                'quadrants are currently empty',
+                'quadrants are empty', 
+                'user requested a summary',
+                'user requested recommendations',
+                'provide recommendations for how to proceed',
+                'need recommendations',
+                'should start with goals',
+                'should start with',
+                'recommendations for how to proceed'
+            ]
+            
+            filtered_suggestions = []
+            for suggestion in suggestions['add_to_quadrant']:
+                thought_text = suggestion.get('thought', '').lower()
+                is_meta = any(meta_phrase in thought_text for meta_phrase in meta_filters)
+                if not is_meta:
+                    filtered_suggestions.append(suggestion)
+                else:
+                    print(f"[DEBUG] Filtered out meta-suggestion from JSON: {suggestion['thought']}")
+            
+            suggestions['add_to_quadrant'] = filtered_suggestions
+        
         print(f"[DEBUG] Final reply_text (raw): {reply_text}", flush=True)
         print(f"[DEBUG] Final reply_text (cleaned): {reply_text_clean}", flush=True)
-        print(f"[DEBUG] Suggestions parsed: {suggestions}", flush=True)
+        print(f"[DEBUG] Suggestions parsed (after filtering): {suggestions}", flush=True)
         # Save conversation turn for context continuity (just the message)
         db.session.add(ConversationTurn(
             board_id=board_id,
@@ -779,15 +841,52 @@ def update_thought():
 
 @app.route('/export_board')
 def export_board():
-    board_id = request.args.get('board_id', type=int)
-    board = Board.query.get(board_id)
-    if not board:
-        return jsonify({'success': False, 'error': 'Board not found'}), 404
-    thoughts = [
-        {'id': t.id, 'content': t.content, 'quadrant': t.quadrant}
-        for t in board.thoughts
-    ]
-    return jsonify({'success': True, 'title': board.title, 'thoughts': thoughts})
+    board_id = request.args.get('board_id')
+    if not board_id:
+        return jsonify({'success': False, 'error': 'No board_id provided'}), 400
+    
+    # Check if it's a UUID (JSON board) or integer (DB board)
+    import re
+    import json
+    from flask import Response
+    uuid_re = re.compile(r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$')
+    
+    if uuid_re.match(str(board_id)):
+        # JSON board
+        board = board_store.get_board(board_id)
+        if not board:
+            return jsonify({'success': False, 'error': 'Board not found'}), 404
+        board_data = board
+        filename = f"{board.get('title', 'board')}_{board_id[:8]}.json"
+    else:
+        # DB board
+        try:
+            board_id_int = int(board_id)
+            board = Board.query.get(board_id_int)
+            if not board:
+                return jsonify({'success': False, 'error': 'Board not found'}), 404
+            thoughts = [
+                {'id': t.id, 'content': t.content, 'quadrant': t.quadrant}
+                for t in board.thoughts
+            ]
+            board_data = {'success': True, 'title': board.title, 'thoughts': thoughts}
+            filename = f"{board.title.replace(' ', '_')}_{board_id}.json"
+        except ValueError:
+            return jsonify({'success': False, 'error': 'Invalid board_id format'}), 400
+    
+    # Create downloadable JSON response
+    json_output = json.dumps(board_data, indent=2, ensure_ascii=False)
+    
+    response = Response(
+        json_output,
+        mimetype='application/json',
+        headers={
+            'Content-Disposition': f'attachment; filename="{filename}"',
+            'Content-Type': 'application/json; charset=utf-8'
+        }
+    )
+    
+    return response
 
 @app.route('/import_board', methods=['POST'])
 def import_board():
@@ -878,23 +977,26 @@ def debug_list_boards():
     ])
 
 @app.route('/create_board', methods=['POST'])
+@login_required
 def create_board_json():
     data = request.get_json()
     name = data.get('name', '').strip()
     if not name:
         return jsonify({'success': False, 'error': 'No name provided'}), 400
-    board_id = board_store.create_board(name)
-    return jsonify({'success': True, 'board_id': board_id})
+    
+    # Check if board with this name already exists for this user
+    existing_board = Board.query.filter_by(title=name, user_id=current_user.id).first()
+    if existing_board:
+        return jsonify({'success': False, 'error': 'A board with this name already exists'}), 400
+    
+    # Create new board in database
+    new_board = Board(title=name, user_id=current_user.id)
+    db.session.add(new_board)
+    db.session.commit()
+    
+    return jsonify({'success': True, 'board_id': new_board.id})
 
-@app.route('/export_board')
-def export_board_json():
-    board_id = request.args.get('board_id')
-    if not board_id:
-        return jsonify({'success': False, 'error': 'No board_id provided'}), 400
-    board = board_store.get_board(board_id)
-    if not board:
-        return jsonify({'success': False, 'error': 'Board not found'}), 404
-    return jsonify(board)
+# Duplicate route removed - consolidated into single export_board route above
 
 @app.route('/import_board', methods=['POST'])
 def import_board_json():
@@ -936,8 +1038,11 @@ from flask import session
 def ai_conversation():
     user_input = request.json.get('content', '').strip()
     board_id = request.json.get('board_id')
-    state = session.get('conversation_state', 'awaiting_initial')
-    history = session.get('conversation_history', [])
+    # RESET conversation state to force fresh categorization
+    state = 'awaiting_initial'  # Always start fresh
+    history = []  # Clear history for fresh start
+    session['conversation_state'] = state
+    session['conversation_history'] = history
     if not board_id:
         return jsonify({'success': False, 'error': 'Missing board_id'}), 400
 
@@ -954,8 +1059,19 @@ def ai_conversation():
 
     # Call your AI (Gemini or OpenAI)
     try:
+        conversational_facilitator = ai_api.conversational_facilitator
         ai_result = conversational_facilitator(prompt)
+        
+        # DEBUG: Log the AI response
+        print("=== AI RESPONSE ===")
+        print(f"AI Result Type: {type(ai_result)}")
+        print(f"AI Result: {ai_result}")
+        print(f"AI Action: {ai_result.get('action')}")
+        print(f"AI Thoughts Count: {len(ai_result.get('thoughts', []))}")
+        print("==================")
+        
     except Exception as e:
+        print(f"AI ERROR: {str(e)}")
         return jsonify({'success': False, 'error': f'AI error: {str(e)}'}), 500
 
     # Parse AI response for intent
@@ -967,10 +1083,17 @@ def ai_conversation():
 
     elif ai_result.get('action') == 'classify_and_add':
         # Add thoughts to quadrants as directed by AI
-        for thought in ai_result['thoughts']:
-            t = Thought(content=thought['content'], quadrant=thought['quadrant'], board_id=board_id)
+        print(f"[DEBUG] Adding {len(ai_result['thoughts'])} thoughts to database...")
+        for i, thought in enumerate(ai_result['thoughts']):
+            print(f"[DEBUG] Thought {i+1}: '{thought['thought']}' -> {thought['quadrant']} quadrant (board_id: {board_id})")
+            t = Thought(content=thought['thought'], quadrant=thought['quadrant'], board_id=board_id)
             db.session.add(t)
+            print(f"[DEBUG] Added thought to session: {t}")
+        
+        print("[DEBUG] Committing to database...")
         db.session.commit()
+        print("[DEBUG] Database commit successful!")
+        
         session['conversation_state'] = 'awaiting_initial'
         # Do NOT reset session['conversation_history'] here; preserve full history for context
         return jsonify({'success': True, 'message': 'Thought(s) added!', 'thoughts': ai_result['thoughts']})
