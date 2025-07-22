@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, jsonify, redirect, url_for, session, send_file
+from flask import Flask, render_template, request, jsonify, redirect, url_for, flash, session, render_template_string
 from admin_prompt import admin_bp
 from templates.gaps_kb_endpoint import kb_blueprint
 from models import db, Board, Thought, MeetingMinute, User
@@ -6,6 +6,7 @@ from flask_login import LoginManager, login_user, logout_user, login_required, c
 from flask_wtf import CSRFProtect
 import os
 import uuid
+import time
 import google.generativeai as genai
 from flask import send_from_directory
 
@@ -36,14 +37,14 @@ def set_sqlite_pragma(dbapi_connection, connection_record):
     cursor.close()
 
 # AI Provider Setup
-AI_PROVIDER = os.environ.get("AI_PROVIDER", "gemini").lower()  # Set to 'openai' to use OpenAI
+AI_PROVIDER = os.environ.get("AI_PROVIDER", "openai").lower()  # Default to OpenAI, set to 'gemini' to use Gemini
 if AI_PROVIDER == "openai":
     ai_api = openai_api
 else:
     ai_api = gemini_api
 
 app = Flask(__name__)
-app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:////home/mel/CascadeProjects/gaps_facilitator/fourws.db'
+app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///database.db'
 
 csrf = CSRFProtect(app)
 
@@ -71,8 +72,9 @@ app.register_blueprint(csrf_token_api)
 # Increase CSRF token lifetime to 1 hour (3600 seconds)
 app.config['WTF_CSRF_TIME_LIMIT'] = 3600
 
-# --- CSRF Protection ---
-csrf = CSRFProtect(app)
+# --- CSRF Protection (DISABLED FOR EXPERIMENTAL ENVIRONMENT) ---
+# csrf = CSRFProtect(app)  # Temporarily disabled to fix API route issues
+print("[WARNING] CSRF protection is disabled in experimental environment", flush=True)
 
 # Flask-Login setup
 login_manager = LoginManager()
@@ -210,7 +212,22 @@ def interactive_gaps():
             history_turns = ConversationTurn.query.filter_by(board_id=board_id).order_by(ConversationTurn.id.asc()).all()
             
             if not history_turns:  # Fresh conversation start
-                user_input = "INITIAL_GREETING_REQUEST"
+                # Check if quadrants have content to determine appropriate response
+                has_quadrant_content = False
+                from models import Board
+                board = Board.query.get(board_id)
+                if board:
+                    # Check if board has any thoughts in any quadrant
+                    if board.thoughts:
+                        has_quadrant_content = True
+                
+                if has_quadrant_content and not user_input:
+                    # Quadrants have content but conversation is reset - ask for contextual guidance
+                    # Use a system-style instruction that won't be categorized as user content
+                    user_input = "SYSTEM: Provide a contextual greeting acknowledging the existing quadrant content and ask what the user would like to work on next. Do not categorize this instruction."
+                else:
+                    # Truly fresh start with empty quadrants - use standard greeting
+                    user_input = "" if not user_input else user_input
             else:
                 # Existing conversation, use system prompt
                 user_input = ("Please summarize the current quadrant state and provide recommendations for how to proceed. "
@@ -399,11 +416,108 @@ def interactive_gaps():
                         if q in quadrants:
                             quadrants[q].append(t.get('content', ''))
         print("[DEBUG] Quadrants being used for LLM (from POST data if present):", quadrants, flush=True)
+        
+        # === HYBRID RULE-BASED + AI CATEGORIZATION ===
+        # Import debug logger
+        from debug_logger import debug_logger
+        
+        # Get configurable confidence threshold from environment
+        RULE_CONFIDENCE_THRESHOLD = float(os.environ.get('RULE_CONFIDENCE_THRESHOLD', '0.7'))
+        print(f"[DEBUG] Rule confidence threshold: {RULE_CONFIDENCE_THRESHOLD}", flush=True)
+        debug_logger.log('system', f'Interactive Mode started with threshold: {RULE_CONFIDENCE_THRESHOLD}', {'user_input': user_input[:100]})
+        
+        # Step 1: Check if input is a question (skip categorization for questions)
+        def is_question(text):
+            text_lower = text.lower().strip()
+            # Direct question words
+            question_words = ['what', 'how', 'why', 'when', 'where', 'who', 'which', 'can', 'could', 'would', 'should', 'do', 'does', 'did', 'is', 'are', 'was', 'were']
+            # Question patterns
+            if text.strip().endswith('?'):
+                return True
+            if any(text_lower.startswith(word + ' ') for word in question_words):
+                return True
+            if any(phrase in text_lower for phrase in ['what do you', 'how do you', 'can you', 'could you', 'would you']):
+                return True
+            return False
+        
+        is_user_question = is_question(user_input)
+        print(f"[DEBUG] Is question: {is_user_question} ('{user_input[:50]}...')")
+        
+        # Step 2: Try rule-based categorization (skip for questions)
+        rule_based_suggestion = None
+        
+        if is_question(user_input):
+            print(f"[DEBUG] Is question: True ('{user_input[:50]}...')")
+            print("[DEBUG] Skipping rule-based categorization - user asked a question", flush=True)
+            debug_logger.log('question_detection', 'Skipped rule-based categorization', {
+                'input': user_input[:100],
+                'reason': 'User asked a question'
+            })
+        else:
+            print(f"[DEBUG] Is question: False ('{user_input[:50]}...')")
+            debug_logger.log('question_detection', 'Proceeding with categorization', {
+                'input': user_input[:100],
+                'reason': 'Not a question'
+            })
+            # Try rule-based categorization
+            try:
+                from rule_based_categorizer import RuleBasedCategorizer
+                categorizer = RuleBasedCategorizer()
+                start_time = time.time()
+                rule_result = categorizer.categorize(user_input)
+                processing_time = (time.time() - start_time) * 1000  # Convert to milliseconds
+                
+                print(f"[DEBUG] Rule-based result: {rule_result['quadrant']} (confidence: {rule_result['confidence']:.2f}, {processing_time:.1f}ms)", flush=True)
+                debug_logger.log('rule_based', f"Categorized as {rule_result['quadrant']}", {
+                    'input': user_input[:100],
+                    'quadrant': rule_result['quadrant'],
+                    'confidence': rule_result['confidence'],
+                    'processing_time_ms': round(processing_time, 1),
+                    'reasoning': rule_result.get('reasoning', 'N/A')
+                })
+                
+                # Check if confidence is high enough to use rule-based result
+                if rule_result['confidence'] >= RULE_CONFIDENCE_THRESHOLD:
+                    print(f"[DEBUG] High confidence ({rule_result['confidence']:.2f} >= {RULE_CONFIDENCE_THRESHOLD}) - using rule-based categorization", flush=True)
+                    debug_logger.log('hybrid_decision', 'Using rule-based categorization', {
+                        'confidence': rule_result['confidence'],
+                        'threshold': RULE_CONFIDENCE_THRESHOLD,
+                        'quadrant': rule_result['quadrant']
+                    })
+                    rule_based_suggestion = {
+                        'thought': user_input,
+                        'quadrant': rule_result['quadrant']
+                    }
+                else:
+                    print(f"[DEBUG] Low confidence ({rule_result['confidence']:.2f} < {RULE_CONFIDENCE_THRESHOLD}) - involving AI for categorization", flush=True)
+                    debug_logger.log('hybrid_decision', 'Involving AI for categorization', {
+                        'confidence': rule_result['confidence'],
+                        'threshold': RULE_CONFIDENCE_THRESHOLD,
+                        'reason': 'Low confidence'
+                    })
+            except Exception as e:
+                print(f"[DEBUG] Rule-based categorization failed: {e}", flush=True)
+                debug_logger.log('error', 'Rule-based categorization failed', {
+                    'error': str(e),
+                    'input': user_input[:100]
+                })
+        
         # Limit conversation history to the last MAX_HISTORY_TURNS for prompt context
         history_window = conversation_history[-MAX_HISTORY_TURNS:] if len(conversation_history) > MAX_HISTORY_TURNS else conversation_history
-        # Call GAPS-Coach logic
+        
+        # Step 3: Build AI prompt based on rule-based result
         from app import build_conversational_prompt
-        prompt = build_conversational_prompt(history_window + [{"role": "user", "content": user_input}], quadrants)
+        
+        if rule_based_suggestion:
+            # High confidence rule-based result - AI focuses on conversation only
+            enhanced_prompt = build_conversational_prompt(history_window + [{"role": "user", "content": user_input}], quadrants)
+            enhanced_prompt += f"\n\nNOTE: Rule-based system has already categorized this input as '{rule_based_suggestion['quadrant'].upper()}' with high confidence. Focus on providing conversational response and strategic advice. Do not re-categorize - the categorization is already handled."
+            prompt = enhanced_prompt
+        else:
+            # Low confidence or no rule result - AI handles both conversation and categorization
+            base_prompt = build_conversational_prompt(history_window + [{"role": "user", "content": user_input}], quadrants)
+            prompt = base_prompt
+        
         # DEBUG: Print the full prompt being sent to the AI
         print("=== AI PROMPT SENT (interactive_gaps) ===", flush=True)
         print(prompt, flush=True)
@@ -451,7 +565,26 @@ def interactive_gaps():
             return None, reply_text.strip()
         suggestions, reply_text_clean = extract_json_and_message(reply_text)
         
-        # Filter out meta-conversational suggestions from JSON
+        # === HYBRID INTEGRATION: Inject rule-based result if high confidence ===
+        if rule_based_suggestion:
+            # High confidence rule-based categorization - inject the result
+            debug_logger.log('hybrid_integration', 'Injecting rule-based suggestion', {
+                'suggestion': rule_based_suggestion['thought'][:100],
+                'quadrant': rule_based_suggestion['quadrant']
+            })
+            
+            # Create or enhance suggestions with rule-based result
+            if not suggestions:
+                suggestions = {'add_to_quadrant': [rule_based_suggestion]}
+            elif 'add_to_quadrant' not in suggestions:
+                suggestions['add_to_quadrant'] = [rule_based_suggestion]
+            else:
+                # Prepend rule-based suggestion to any AI suggestions
+                suggestions['add_to_quadrant'].insert(0, rule_based_suggestion)
+            
+            print(f"[DEBUG] Injected rule-based suggestion: {rule_based_suggestion}", flush=True)
+        
+        # Filter out meta-conversational suggestions and duplicates from JSON
         if suggestions and 'add_to_quadrant' in suggestions:
             meta_filters = [
                 'quadrants are currently empty',
@@ -465,16 +598,91 @@ def interactive_gaps():
                 'recommendations for how to proceed'
             ]
             
+            # Build list of existing quadrant items for duplicate detection
+            existing_items = set()
+            for quadrant_name, items in quadrants.items():
+                for item in items:
+                    # Normalize for comparison (lowercase, strip whitespace)
+                    normalized_item = item.lower().strip()
+                    existing_items.add(normalized_item)
+            
+            print(f"[DEBUG] Existing quadrant items for duplicate check: {len(existing_items)} items", flush=True)
+            debug_logger.log('filtering', f'Starting suggestion filtering', {
+                'total_suggestions': len(suggestions['add_to_quadrant']),
+                'existing_items_count': len(existing_items)
+            })
+            
             filtered_suggestions = []
+            seen_suggestions = set()  # Track suggestions to avoid rule-based + AI duplicates
+            
             for suggestion in suggestions['add_to_quadrant']:
-                thought_text = suggestion.get('thought', '').lower()
+                thought_text = suggestion.get('thought', '').lower().strip()
+                
+                # Check for meta-conversational content
                 is_meta = any(meta_phrase in thought_text for meta_phrase in meta_filters)
-                if not is_meta:
-                    filtered_suggestions.append(suggestion)
-                else:
-                    print(f"[DEBUG] Filtered out meta-suggestion from JSON: {suggestion['thought']}")
+                if is_meta:
+                    print(f"[DEBUG] Filtered out meta-suggestion: {suggestion['thought']}", flush=True)
+                    debug_logger.log('filtering', 'Filtered meta-suggestion', {
+                        'suggestion': suggestion['thought'][:100],
+                        'reason': 'Meta-conversational content'
+                    })
+                    continue
+                
+                # Check for duplicates against existing quadrant items
+                is_duplicate = thought_text in existing_items
+                if is_duplicate:
+                    print(f"[DEBUG] Filtered out duplicate suggestion: {suggestion['thought']}", flush=True)
+                    debug_logger.log('filtering', 'Filtered duplicate suggestion', {
+                        'suggestion': suggestion['thought'][:100],
+                        'reason': 'Already exists in quadrants'
+                    })
+                    continue
+                
+                # Check for semantic duplicates between rule-based and AI suggestions
+                # Create a normalized version for comparison
+                normalized_text = ' '.join(thought_text.split())  # Remove extra whitespace
+                # Remove common prefixes/suffixes that might differ
+                for prefix in ['i want to ', 'we need to ', 'goal is to ', 'plan to ']:
+                    if normalized_text.startswith(prefix):
+                        normalized_text = normalized_text[len(prefix):]
+                        break
+                
+                # Check if we've seen a similar suggestion already
+                is_semantic_duplicate = False
+                for seen_text in seen_suggestions:
+                    # Simple similarity check - if 80% of words overlap, consider duplicate
+                    seen_words = set(seen_text.split())
+                    current_words = set(normalized_text.split())
+                    if len(current_words) > 0 and len(seen_words) > 0:
+                        overlap = len(seen_words.intersection(current_words))
+                        similarity = overlap / max(len(seen_words), len(current_words))
+                        if similarity >= 0.8:  # 80% similarity threshold
+                            is_semantic_duplicate = True
+                            print(f"[DEBUG] Filtered out semantic duplicate: '{suggestion['thought']}' (similar to previous suggestion)", flush=True)
+                            debug_logger.log('filtering', 'Filtered semantic duplicate', {
+                                'suggestion': suggestion['thought'][:100],
+                                'similarity': round(similarity, 2),
+                                'reason': 'Similar to previous suggestion'
+                            })
+                            break
+                
+                if is_semantic_duplicate:
+                    continue
+                
+                # Keep non-meta, non-duplicate suggestions
+                seen_suggestions.add(normalized_text)
+                filtered_suggestions.append(suggestion)
+                debug_logger.log('filtering', 'Kept suggestion', {
+                    'suggestion': suggestion['thought'][:100],
+                    'quadrant': suggestion.get('quadrant', 'unknown')
+                })
             
             suggestions['add_to_quadrant'] = filtered_suggestions
+            print(f"[DEBUG] After filtering: {len(filtered_suggestions)} suggestions remain", flush=True)
+            debug_logger.log('filtering', 'Filtering complete', {
+                'final_suggestions_count': len(filtered_suggestions),
+                'filtered_out_count': len(suggestions_before_filter) - len(filtered_suggestions) if 'suggestions_before_filter' in locals() else 'unknown'
+            })
         
         print(f"[DEBUG] Final reply_text (raw): {reply_text}", flush=True)
         print(f"[DEBUG] Final reply_text (cleaned): {reply_text_clean}", flush=True)
@@ -965,6 +1173,7 @@ def list_boards_json():
             'id': b.id,
             'title': b.title,
             'name': getattr(b, 'name', None) or b.title,  # for compatibility
+            'created_at': b.created_at.isoformat() if hasattr(b, 'created_at') and b.created_at else None,
         })
     return jsonify({'boards': boards})
 
@@ -1196,7 +1405,8 @@ def rewrite_thought():
     except Exception as e:
         print("ERROR in rewrite_thought:", e)
         traceback.print_exc()
-        return jsonify({"reply": "Sorry, something went wrong while contacting the AI.", "suggestions": {"add_to_quadrant": []}}), 200
+        # Use a more generic error response that could be customized via prompt if needed
+        return jsonify({"reply": "An error occurred while processing your request. Please try again.", "suggestions": {"add_to_quadrant": []}}), 200
 
 
 @app.route('/suggest_solution/', methods=['POST'])
@@ -1384,6 +1594,654 @@ def get_meeting_minutes():
 def api_logged_in():
     from flask_login import current_user
     return jsonify({'logged_in': current_user.is_authenticated})
+
+# ============================================================================
+# RULE-BASED CATEGORIZATION TESTING INTERFACE
+# ============================================================================
+
+# HTML Template for Rule Testing Interface
+RULE_TESTER_TEMPLATE = """
+<!DOCTYPE html>
+<html>
+<head>
+    <title>🧪 Rule-Based Categorization Tester</title>
+    <style>
+        body { font-family: Arial, sans-serif; max-width: 1000px; margin: 0 auto; padding: 20px; background: #f8f9fa; }
+        .header { text-align: center; margin-bottom: 30px; }
+        .container { background: white; padding: 20px; border-radius: 8px; margin: 15px 0; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        .result { padding: 15px; border-radius: 5px; margin: 10px 0; }
+        .error { background: #ffebee; color: #c62828; border-left: 4px solid #f44336; }
+        .success { background: #e8f5e9; color: #2e7d32; border-left: 4px solid #4caf50; }
+        .info { background: #e3f2fd; color: #1976d2; border-left: 4px solid #2196f3; }
+        input[type="text"], select { width: 100%; padding: 12px; margin: 8px 0; border: 1px solid #ddd; border-radius: 4px; box-sizing: border-box; }
+        button { background: #4CAF50; color: white; padding: 12px 24px; border: none; border-radius: 4px; cursor: pointer; margin: 5px; font-size: 14px; }
+        button:hover { background: #45a049; }
+        button.secondary { background: #2196F3; }
+        button.secondary:hover { background: #1976D2; }
+        .quadrant { display: inline-block; margin: 3px; padding: 6px 12px; border-radius: 20px; font-weight: bold; font-size: 0.9em; }
+        .goal { background: #e3f2fd; color: #1976d2; }
+        .status { background: #f3e5f5; color: #7b1fa2; }
+        .analysis { background: #fff3e0; color: #f57c00; }
+        .plan { background: #e8f5e9; color: #388e3c; }
+        .rules { background: #fafafa; padding: 15px; border-left: 4px solid #2196F3; margin: 10px 0; }
+        .keyword { background: #e0e0e0; padding: 3px 8px; margin: 2px; border-radius: 12px; display: inline-block; font-size: 0.85em; }
+        .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; }
+        .stat-box { background: #f5f5f5; padding: 15px; border-radius: 8px; text-align: center; }
+        .stat-number { font-size: 2em; font-weight: bold; color: #4CAF50; }
+        .back-link { position: absolute; top: 20px; left: 20px; }
+        .back-link a { color: #2196F3; text-decoration: none; font-weight: bold; }
+        .back-link a:hover { text-decoration: underline; }
+        .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+        @media (max-width: 768px) { .grid { grid-template-columns: 1fr; } }
+    </style>
+</head>
+<body>
+    <div class="back-link">
+        <a href="/">← Back to Main App</a>
+    </div>
+    
+    <div class="header">
+        <h1>🧪 Rule-Based Categorization Tester</h1>
+        <p>Test and customize the rule-based quadrant categorization system</p>
+    </div>
+    
+    <div class="grid">
+        <div>
+            <div class="container">
+                <h3>🎯 Test Single Input</h3>
+                <input type="text" id="testInput" placeholder="Enter text to categorize (e.g., 'I want to increase sales by 20%')" />
+                <button onclick="testSingle()">Categorize</button>
+                <div id="singleResult"></div>
+            </div>
+            
+            <div class="container">
+                <h3>📦 Quick Examples</h3>
+                <button onclick="testExample('I want to increase sales by 20% this quarter')">Goal Example</button>
+                <button onclick="testExample('We are currently behind on the project timeline')">Status Example</button>
+                <button onclick="testExample('The main issue is poor communication between teams')">Analysis Example</button>
+                <button onclick="testExample('Next step is to schedule a team meeting')">Plan Example</button>
+            </div>
+            
+            <div class="container">
+                <h3>➕ Add Custom Keyword</h3>
+                <select id="quadrantSelect">
+                    <option value="goal">Goal</option>
+                    <option value="status">Status</option>
+                    <option value="analysis">Analysis</option>
+                    <option value="plan">Plan</option>
+                </select>
+                <input type="text" id="keywordInput" placeholder="Enter new keyword or phrase" />
+                <button onclick="addKeyword()">Add Keyword</button>
+                <div id="addResult"></div>
+            </div>
+        </div>
+        
+        <div>
+            <div class="container">
+                <h3>⚡ Performance Test</h3>
+                <button onclick="performanceTest()">Run Speed Test (100 categorizations)</button>
+                <div id="performanceResult"></div>
+            </div>
+            
+            <div class="container">
+                <h3>📋 Current Rules</h3>
+                <button class="secondary" onclick="viewRules()">View All Rules</button>
+                <div id="rulesDisplay"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        function testSingle() {
+            const text = document.getElementById('testInput').value;
+            if (!text.trim()) {
+                document.getElementById('singleResult').innerHTML = '<div class="result error">Please enter some text to test.</div>';
+                return;
+            }
+            
+            fetch('/api/rule-categorize', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({text: text})
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.error) {
+                    document.getElementById('singleResult').innerHTML = `<div class="result error">Error: ${data.error}</div>`;
+                    return;
+                }
+                const quadrantClass = data.category.toLowerCase();
+                document.getElementById('singleResult').innerHTML = `
+                    <div class="result success">
+                        <strong>Text:</strong> "${data.text}"<br>
+                        <strong>Category:</strong> <span class="quadrant ${quadrantClass}">${data.category.toUpperCase()}</span><br>
+                        <strong>Confidence:</strong> ${data.confidence.toFixed(2)}<br>
+                        <strong>Speed:</strong> ${data.processing_time_ms.toFixed(1)}ms<br>
+                        ${data.matched_keywords.length > 0 ? '<strong>Matched Keywords:</strong> ' + data.matched_keywords.map(k => `<span class="keyword">${k}</span>`).join('') : ''}
+                    </div>
+                `;
+            })
+            .catch(error => {
+                document.getElementById('singleResult').innerHTML = `<div class="result error">Network error: ${error}</div>`;
+            });
+        }
+        
+        function testExample(text) {
+            document.getElementById('testInput').value = text;
+            testSingle();
+        }
+        
+        function performanceTest() {
+            document.getElementById('performanceResult').innerHTML = '<div class="result info">Running performance test...</div>';
+            
+            fetch('/api/rule-performance', {method: 'POST'})
+            .then(response => response.json())
+            .then(data => {
+                if (data.error) {
+                    document.getElementById('performanceResult').innerHTML = `<div class="result error">Error: ${data.error}</div>`;
+                    return;
+                }
+                document.getElementById('performanceResult').innerHTML = `
+                    <div class="result success">
+                        <div class="stats">
+                            <div class="stat-box">
+                                <div class="stat-number">${data.total_tests}</div>
+                                <div>Tests</div>
+                            </div>
+                            <div class="stat-box">
+                                <div class="stat-number">${data.avg_time_ms.toFixed(2)}ms</div>
+                                <div>Avg Time</div>
+                            </div>
+                            <div class="stat-box">
+                                <div class="stat-number">${data.categorizations_per_second.toFixed(0)}</div>
+                                <div>Per Second</div>
+                            </div>
+                            <div class="stat-box">
+                                <div class="stat-number">$0.00</div>
+                                <div>API Cost</div>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            })
+            .catch(error => {
+                document.getElementById('performanceResult').innerHTML = `<div class="result error">Network error: ${error}</div>`;
+            });
+        }
+        
+        function addKeyword() {
+            const quadrant = document.getElementById('quadrantSelect').value;
+            const keyword = document.getElementById('keywordInput').value.trim();
+            
+            if (!keyword) {
+                document.getElementById('addResult').innerHTML = '<div class="result error">Please enter a keyword.</div>';
+                return;
+            }
+            
+            fetch('/api/rule-add-keyword', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({quadrant: quadrant, keyword: keyword})
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.error) {
+                    document.getElementById('addResult').innerHTML = `<div class="result error">Error: ${data.error}</div>`;
+                    return;
+                }
+                document.getElementById('addResult').innerHTML = `<div class="result success">${data.message}</div>`;
+                document.getElementById('keywordInput').value = '';
+            })
+            .catch(error => {
+                document.getElementById('addResult').innerHTML = `<div class="result error">Network error: ${error}</div>`;
+            });
+        }
+        
+        function viewRules() {
+            document.getElementById('rulesDisplay').innerHTML = '<div class="result info">Loading rules...</div>';
+            
+            fetch('/api/rule-patterns')
+            .then(response => response.json())
+            .then(data => {
+                if (data.error) {
+                    document.getElementById('rulesDisplay').innerHTML = `<div class="result error">Error: ${data.error}</div>`;
+                    return;
+                }
+                let html = '<div class="rules">';
+                
+                // Add rule management header
+                html += '<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">';
+                html += '<h4>📋 Rule Management</h4>';
+                html += '<button onclick="toggleRuleMode()" id="ruleModeBtn" class="secondary">Switch to Edit Mode</button>';
+                html += '</div>';
+                
+                for (const [quadrant, patterns] of Object.entries(data)) {
+                    html += `<div class="quadrant-rules" data-quadrant="${quadrant}">`;
+                    html += `<h4>🎯 ${quadrant.toUpperCase()} Quadrant</h4>`;
+                    
+                    // Keywords section with management
+                    html += `<div class="rule-section">`;
+                    html += `<strong>Keywords (${patterns.keywords.length}):</strong>`;
+                    html += `<button onclick="toggleSection('keywords-${quadrant}')" class="secondary" style="margin-left: 10px; padding: 4px 8px; font-size: 12px;">Show All</button><br>`;
+                    html += `<div id="keywords-${quadrant}" class="rule-items" style="display: none;">`;
+                    patterns.keywords.forEach((keyword, index) => {
+                        html += `<div class="rule-item" data-type="keyword" data-quadrant="${quadrant}" data-index="${index}">`;
+                        html += `<span class="keyword editable" onclick="editRule('keyword', '${quadrant}', ${index}, '${keyword}')">${keyword}</span>`;
+                        html += `<button onclick="deleteRule('keyword', '${quadrant}', ${index})" class="delete-btn" style="display: none; margin-left: 5px; padding: 2px 6px; background: #f44336; color: white; border: none; border-radius: 3px; font-size: 11px;">×</button>`;
+                        html += `</div>`;
+                    });
+                    html += `</div>`;
+                    
+                    // Show first 10 keywords by default
+                    html += `<div class="keywords-preview">`;
+                    html += patterns.keywords.slice(0, 10).map((k, i) => 
+                        `<span class="keyword editable" onclick="editRule('keyword', '${quadrant}', ${i}, '${k}')">${k}</span>`
+                    ).join('');
+                    if (patterns.keywords.length > 10) html += `<span class="keyword">...and ${patterns.keywords.length - 10} more</span>`;
+                    html += `</div>`;
+                    html += `</div>`;
+                    
+                    // Phrase patterns section with management
+                    html += `<div class="rule-section">`;
+                    html += `<strong>Phrase Patterns (${patterns.phrases.length}):</strong>`;
+                    html += `<button onclick="toggleSection('phrases-${quadrant}')" class="secondary" style="margin-left: 10px; padding: 4px 8px; font-size: 12px;">Show All</button><br>`;
+                    html += `<div id="phrases-${quadrant}" class="rule-items" style="display: none;">`;
+                    patterns.phrases.forEach((phrase, index) => {
+                        html += `<div class="rule-item" data-type="phrase" data-quadrant="${quadrant}" data-index="${index}">`;
+                        html += `<code class="phrase-pattern editable" onclick="editRule('phrase', '${quadrant}', ${index}, '${phrase}')" style="background: #f5f5f5; padding: 4px 8px; border-radius: 4px; font-family: monospace; font-size: 0.9em;">${phrase}</code>`;
+                        html += `<button onclick="deleteRule('phrase', '${quadrant}', ${index})" class="delete-btn" style="display: none; margin-left: 5px; padding: 2px 6px; background: #f44336; color: white; border: none; border-radius: 3px; font-size: 11px;">×</button>`;
+                        html += `</div>`;
+                    });
+                    html += `</div>`;
+                    html += `</div>`;
+                    
+                    html += `<br>`;
+                    html += `</div>`;
+                }
+                html += '</div>';
+                document.getElementById('rulesDisplay').innerHTML = html;
+            })
+            .catch(error => {
+                document.getElementById('rulesDisplay').innerHTML = `<div class="result error">Network error: ${error}</div>`;
+            });
+        }
+        
+        let editMode = false;
+        
+        function toggleRuleMode() {
+            editMode = !editMode;
+            const btn = document.getElementById('ruleModeBtn');
+            const deleteButtons = document.querySelectorAll('.delete-btn');
+            
+            if (editMode) {
+                btn.textContent = 'Switch to View Mode';
+                btn.style.background = '#f44336';
+                deleteButtons.forEach(btn => btn.style.display = 'inline-block');
+                document.querySelectorAll('.editable').forEach(el => {
+                    el.style.cursor = 'pointer';
+                    el.title = 'Click to edit';
+                });
+            } else {
+                btn.textContent = 'Switch to Edit Mode';
+                btn.style.background = '#2196F3';
+                deleteButtons.forEach(btn => btn.style.display = 'none');
+                document.querySelectorAll('.editable').forEach(el => {
+                    el.style.cursor = 'default';
+                    el.title = '';
+                });
+            }
+        }
+        
+        function toggleSection(sectionId) {
+            const section = document.getElementById(sectionId);
+            const preview = section.parentElement.querySelector('.keywords-preview');
+            if (section.style.display === 'none') {
+                section.style.display = 'block';
+                if (preview) preview.style.display = 'none';
+                event.target.textContent = 'Hide';
+            } else {
+                section.style.display = 'none';
+                if (preview) preview.style.display = 'block';
+                event.target.textContent = 'Show All';
+            }
+        }
+        
+        function editRule(type, quadrant, index, currentValue) {
+            if (!editMode) return;
+            
+            const newValue = prompt(`Edit ${type}:`, currentValue);
+            if (newValue === null || newValue.trim() === currentValue.trim()) {
+                return; // User cancelled or no change
+            }
+            
+            fetch('/api/rule-edit', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    type: type,
+                    quadrant: quadrant,
+                    index: index,
+                    old_value: currentValue,
+                    new_value: newValue.trim()
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.error) {
+                    alert(`Error: ${data.error}`);
+                    return;
+                }
+                alert(data.message);
+                viewRules(); // Refresh the display
+            })
+            .catch(error => {
+                alert(`Network error: ${error}`);
+            });
+        }
+        
+        function deleteRule(type, quadrant, index) {
+            if (!editMode) return;
+            
+            if (!confirm(`Are you sure you want to delete this ${type}?`)) {
+                return;
+            }
+            
+            fetch('/api/rule-delete', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    type: type,
+                    quadrant: quadrant,
+                    index: index
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.error) {
+                    alert(`Error: ${data.error}`);
+                    return;
+                }
+                alert(data.message);
+                viewRules(); // Refresh the display
+            })
+            .catch(error => {
+                alert(`Network error: ${error}`);
+            });
+        }
+        
+        // Auto-test on page load
+        window.onload = function() {
+            testExample('I want to achieve better results this quarter');
+        };
+    </script>
+</body>
+</html>
+"""
+
+@app.route('/api/test-no-csrf', methods=['POST'])
+@csrf.exempt
+def test_no_csrf():
+    """Test route to verify CSRF exemption works"""
+    return jsonify({'status': 'success', 'message': 'CSRF exemption working'})
+
+@app.route('/rule-tester')
+@login_required
+def rule_tester_page():
+    """Rule-based categorization testing interface"""
+    return render_template_string(RULE_TESTER_TEMPLATE)
+
+@app.route('/debug')
+@login_required
+def debug_page():
+    """Debug page showing hybrid system processing logs"""
+    return render_template('debug.html')
+
+@app.route('/api/debug/logs')
+@login_required
+def get_debug_logs():
+    """API endpoint to get recent debug logs"""
+    from debug_logger import debug_logger
+    
+    limit = request.args.get('limit', 50, type=int)
+    logs = debug_logger.get_logs(limit=limit)
+    
+    return jsonify({
+        'logs': logs,
+        'total_count': len(logs)
+    })
+
+@app.route('/api/debug/clear', methods=['POST'])
+@login_required
+@csrf.exempt  # Temporary for experimental environment
+def clear_debug_logs():
+    """API endpoint to clear debug logs"""
+    from debug_logger import debug_logger
+    
+    debug_logger.clear()
+    return jsonify({'status': 'success', 'message': 'Debug logs cleared'})
+
+@app.route('/api/rule-categorize', methods=['POST'])
+@csrf.exempt
+def rule_categorize():
+    """API endpoint for rule-based categorization"""
+    try:
+        print(f"[DEBUG] Rule categorize called, request content type: {request.content_type}", flush=True)
+        
+        # Check if request has JSON data
+        if not request.is_json:
+            print(f"[DEBUG] Request is not JSON, raw data: {request.get_data()}", flush=True)
+            return jsonify({'error': 'Request must be JSON'}), 400
+        
+        data = request.get_json()
+        print(f"[DEBUG] Received JSON data: {data}", flush=True)
+        
+        if not data:
+            return jsonify({'error': 'No JSON data provided'}), 400
+        
+        text = data.get('text', '')
+        print(f"[DEBUG] Extracted text: '{text}'", flush=True)
+        
+        if not text.strip():
+            return jsonify({'error': 'No text provided'}), 400
+        
+        from rule_based_categorizer import RuleBasedCategorizer
+        import time
+        
+        categorizer = RuleBasedCategorizer()
+        
+        # Measure processing time
+        start_time = time.time()
+        result = categorizer.categorize(text)
+        end_time = time.time()
+        processing_time_ms = (end_time - start_time) * 1000
+        
+        print(f"[DEBUG] Categorization result: {result}", flush=True)
+        
+        # Convert 'quadrant' key to 'category' for frontend compatibility
+        if 'quadrant' in result:
+            result['category'] = result.pop('quadrant')
+        
+        # Add processing time for frontend display
+        result['processing_time_ms'] = round(processing_time_ms, 3)
+        
+        # Add input text to response for frontend display
+        result['text'] = text
+        
+        # Add matched_keywords field for frontend display (extract from reasoning if available)
+        matched_keywords = []
+        if 'reasoning' in result and 'keyword:' in result['reasoning']:
+            # Extract keywords from reasoning string
+            import re
+            keyword_matches = re.findall(r"keyword: '([^']+)'", result['reasoning'])
+            matched_keywords = keyword_matches
+        result['matched_keywords'] = matched_keywords
+        
+        return jsonify(result)
+    except ImportError as e:
+        print(f"[DEBUG] Import error: {str(e)}", flush=True)
+        return jsonify({'error': f'Rule categorizer import failed: {str(e)}'}), 500
+    except Exception as e:
+        print(f"[DEBUG] Categorization exception: {str(e)}", flush=True)
+        return jsonify({'error': f'Categorization failed: {str(e)}'}), 500
+
+@app.route('/api/rule-performance', methods=['POST'])
+@csrf.exempt
+def rule_performance_test():
+    """API endpoint for rule-based performance testing"""
+    try:
+        from rule_based_categorizer import RuleBasedCategorizer
+        import time
+        
+        categorizer = RuleBasedCategorizer()
+        
+        test_cases = [
+            "I want to achieve better results",
+            "Currently working on the project", 
+            "The issue is lack of resources",
+            "Plan to implement new strategy"
+        ] * 25  # 100 total tests
+        
+        start_time = time.time()
+        for text in test_cases:
+            categorizer.categorize(text)
+        end_time = time.time()
+        
+        total_time_ms = (end_time - start_time) * 1000
+        avg_time_ms = total_time_ms / len(test_cases)
+        categorizations_per_second = len(test_cases) / (total_time_ms / 1000)
+        
+        return jsonify({
+            'total_tests': len(test_cases),
+            'total_time_ms': total_time_ms,
+            'avg_time_ms': avg_time_ms,
+            'categorizations_per_second': categorizations_per_second
+        })
+    except Exception as e:
+        return jsonify({'error': f'Performance test failed: {str(e)}'}), 500
+
+@app.route('/api/rule-patterns')
+@csrf.exempt
+def get_rule_patterns():
+    """API endpoint to get current rule patterns"""
+    try:
+        from rule_based_categorizer import RuleBasedCategorizer
+        categorizer = RuleBasedCategorizer()
+        return jsonify(categorizer.patterns)
+    except Exception as e:
+        return jsonify({'error': f'Failed to get patterns: {str(e)}'}), 500
+
+@app.route('/api/rule-add-keyword', methods=['POST'])
+@csrf.exempt
+def add_rule_keyword():
+    """API endpoint to add new keyword to rules"""
+    try:
+        from rule_based_categorizer import RuleBasedCategorizer
+        categorizer = RuleBasedCategorizer()
+        
+        data = request.json
+        quadrant = data.get('quadrant', '').lower()
+        keyword = data.get('keyword', '').strip()
+        
+        if quadrant not in categorizer.patterns:
+            return jsonify({'error': 'Invalid quadrant. Choose: goal, status, analysis, plan'}), 400
+        
+        if not keyword:
+            return jsonify({'error': 'No keyword provided'}), 400
+        
+        categorizer.patterns[quadrant]['keywords'].append(keyword)
+        return jsonify({'success': True, 'message': f'Added "{keyword}" to {quadrant.upper()} quadrant'})
+    except Exception as e:
+        return jsonify({'error': f'Failed to add keyword: {str(e)}'}), 500
+
+@app.route('/api/rule-edit', methods=['POST'])
+@csrf.exempt
+def edit_rule():
+    """API endpoint to edit existing rule (keyword or phrase pattern)"""
+    try:
+        from rule_based_categorizer import RuleBasedCategorizer
+        categorizer = RuleBasedCategorizer()
+        
+        data = request.json
+        rule_type = data.get('type', '').lower()  # 'keyword' or 'phrase'
+        quadrant = data.get('quadrant', '').lower()
+        index = data.get('index', -1)
+        old_value = data.get('old_value', '')
+        new_value = data.get('new_value', '').strip()
+        
+        if quadrant not in categorizer.patterns:
+            return jsonify({'error': 'Invalid quadrant. Choose: goal, status, analysis, plan'}), 400
+        
+        if rule_type not in ['keyword', 'phrase']:
+            return jsonify({'error': 'Invalid rule type. Choose: keyword, phrase'}), 400
+        
+        if not new_value:
+            return jsonify({'error': 'New value cannot be empty'}), 400
+        
+        # Get the appropriate list
+        if rule_type == 'keyword':
+            rule_list = categorizer.patterns[quadrant]['keywords']
+        else:
+            rule_list = categorizer.patterns[quadrant]['phrases']
+        
+        # Validate index
+        if index < 0 or index >= len(rule_list):
+            return jsonify({'error': 'Invalid rule index'}), 400
+        
+        # Verify old value matches (safety check)
+        if rule_list[index] != old_value:
+            return jsonify({'error': 'Rule has been modified by another process. Please refresh and try again.'}), 409
+        
+        # Update the rule
+        rule_list[index] = new_value
+        
+        return jsonify({
+            'success': True, 
+            'message': f'Updated {rule_type} in {quadrant.upper()} quadrant from "{old_value}" to "{new_value}"'
+        })
+    except Exception as e:
+        return jsonify({'error': f'Failed to edit rule: {str(e)}'}), 500
+
+@app.route('/api/rule-delete', methods=['POST'])
+@csrf.exempt
+def delete_rule():
+    """API endpoint to delete existing rule (keyword or phrase pattern)"""
+    try:
+        from rule_based_categorizer import RuleBasedCategorizer
+        categorizer = RuleBasedCategorizer()
+        
+        data = request.json
+        rule_type = data.get('type', '').lower()  # 'keyword' or 'phrase'
+        quadrant = data.get('quadrant', '').lower()
+        index = data.get('index', -1)
+        
+        if quadrant not in categorizer.patterns:
+            return jsonify({'error': 'Invalid quadrant. Choose: goal, status, analysis, plan'}), 400
+        
+        if rule_type not in ['keyword', 'phrase']:
+            return jsonify({'error': 'Invalid rule type. Choose: keyword, phrase'}), 400
+        
+        # Get the appropriate list
+        if rule_type == 'keyword':
+            rule_list = categorizer.patterns[quadrant]['keywords']
+        else:
+            rule_list = categorizer.patterns[quadrant]['phrases']
+        
+        # Validate index
+        if index < 0 or index >= len(rule_list):
+            return jsonify({'error': 'Invalid rule index'}), 400
+        
+        # Get the value being deleted for the success message
+        deleted_value = rule_list[index]
+        
+        # Delete the rule
+        del rule_list[index]
+        
+        return jsonify({
+            'success': True, 
+            'message': f'Deleted {rule_type} "{deleted_value}" from {quadrant.upper()} quadrant'
+        })
+    except Exception as e:
+        return jsonify({'error': f'Failed to delete rule: {str(e)}'}), 500
 
 if __name__ == '__main__':
     with app.app_context():

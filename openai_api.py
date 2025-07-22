@@ -44,36 +44,7 @@ def conversational_facilitator(prompt, conversation_history=None, quadrants=None
     - {'action': 'classify_and_add', 'thoughts': [{'content': ..., 'quadrant': ...}, ...]}
     """
     
-    # Handle special initial greeting request
-    if "INITIAL_GREETING_REQUEST" in prompt:
-        # Check if there are existing quadrants with data
-        has_existing_data = False
-        if quadrants:
-            for quadrant_key, items in quadrants.items():
-                if items and len(items) > 0:
-                    has_existing_data = True
-                    break
-        
-        if has_existing_data:
-            # Context-aware greeting for existing data
-            contextual_greetings = [
-                "I can see you have some thoughts already organized in your quadrants. What would you like to work on next?",
-                "I notice you've got some items in your quadrants already. What aspect would you like to explore further?",
-                "I see you have some thoughts captured here. What would you like to focus on or add to?"
-            ]
-            import random
-            greeting = random.choice(contextual_greetings)
-        else:
-            # Fresh start greeting for empty quadrants
-            fresh_greetings = [
-                "I see we're starting from scratch. Let's get started: What's on your mind today or what problem can I help with?",
-                "Looks like we have a fresh start here. What challenge or goal would you like to work on?",
-                "Starting with a clean slate! What's the main issue or opportunity you'd like to explore?"
-            ]
-            import random
-            greeting = random.choice(fresh_greetings)
-        
-        return {'action': 'ask_clarification', 'question': greeting}
+    # Removed hardcoded initial greeting logic - now always uses prompt file
     
     # Let AI handle all categorization - removed broken force categorization logic
     # that was always defaulting to 'status' quadrant regardless of context

@@ -42,12 +42,31 @@
             <a id="reset-conversation-main" href="#" style="display:block;padding:0.7em 1em;text-decoration:none;color:#333;border-bottom:1px solid #eee;">
                 <i class="fa fa-refresh" style="margin-right:0.5em;"></i>Reset Conversation
             </a>
+            <a href="/rule-tester" style="display:block;padding:0.7em 1em;text-decoration:none;color:#2196F3;border-bottom:1px solid #eee;">
+                <i class="fa fa-cogs" style="margin-right:0.5em;"></i>🧪 Rule Tester
+            </a>
+            <a href="/debug" style="display:block;padding:0.7em 1em;text-decoration:none;color:#17a2b8;border-bottom:1px solid #eee;">
+                <i class="fa fa-bug" style="margin-right:0.5em;"></i>🔍 Debug Console
+            </a>
             <a id="help-link" href="#" style="display:block;padding:0.7em 1em;text-decoration:none;color:#333;">
                 <i class="fa fa-question-circle" style="margin-right:0.5em;"></i>Help
             </a>
             <a id="export-cpf-link" href="#" style="display:block;padding:0.7em 1em;text-decoration:none;color:#333;">
                 <i class="fa fa-file-text" style="margin-right:0.5em;"></i>Export C.P.F.
             </a>
+            <a id="quick-add-thought-link" href="#" style="display:block;padding:0.7em 1em;text-decoration:none;color:#007bff;border-bottom:1px solid #eee;">
+                <i class="fa fa-plus" style="margin-right:0.5em;"></i>Quick Add Thought
+            </a>
+            {% if current_user.is_authenticated and current_user.is_admin %}
+            <a href="/admin/prompt_editor" id="prompt-editor-link" style="display:block;padding:0.7em 1em;text-decoration:none;color:#28a745;border-bottom:1px solid #eee;">
+                <i class="fa fa-edit" style="margin-right:0.5em;"></i>Prompt Editor
+            </a>
+            {% endif %}
+            {% if current_user.is_authenticated %}
+            <a href="{{ url_for('logout') }}" id="logout-link" style="display:block;padding:0.7em 1em;text-decoration:none;color:#333;">
+                <i class="fa fa-sign-out" style="margin-right:0.5em;"></i>Logout
+            </a>
+            {% endif %}
         </div>
     </div>
 
@@ -93,19 +112,7 @@
 
     <!-- Main Content -->
     <main>
-        <!-- Add Thought Section -->
-        <div class="add-thought">
-            <input id="new-thought-input" type="text" placeholder="What's on your mind? (AI will help organize your thoughts)" style="flex:1;">
-            <select id="new-thought-quadrant">
-                <option value="auto">AI Decide</option>
-                <option value="status">Status</option>
-                <option value="goal">Goal</option>
-                <option value="analysis">Analysis</option>
-                <option value="plan">Plan</option>
-            </select>
-            <button id="add-thought-btn">Add</button>
-            <button class="voice-btn" id="voice-btn" title="Voice input">🎤</button>
-        </div>
+
 
         <!-- Interactive Mode Link -->
         <div style="text-align:center;margin-bottom:2rem;">
@@ -124,14 +131,14 @@
                         <li class="thought-item" draggable="true" ondragstart="dragThought(event, '{{ thought.id }}')" ondragend="clearTrashHighlight()" data-thought-id="{{ thought.id }}" data-quadrant="status">
                             <span class="thought-content">{{ thought.content }}</span>
                             <div class="thought-controls">
-                                <button onclick="editThought({{ thought.id }}, '{{ thought.content|e }}', this)" title="Edit">✏️</button>
-                                <select onchange="moveThought({{ thought.id }}, this.value, this)">
+                                <button onclick="editThought('{{ thought.id }}', '{{ thought.content|e }}', this)" title="Edit">✏️</button>
+                                <select onchange="moveThought('{{ thought.id }}', this.value, this)">
                                     <option value="">Move to...</option>
                                     <option value="goal">Goal</option>
                                     <option value="analysis">Analysis</option>
                                     <option value="plan">Plan</option>
                                 </select>
-                                <button onclick="deleteThought({{ thought.id }}, this)" title="Delete">🗑️</button>
+                                <button onclick="deleteThought('{{ thought.id }}', this)" title="Delete">🗑️</button>
                             </div>
                         </li>
                     {% endfor %}
@@ -146,14 +153,14 @@
                         <li class="thought-item" draggable="true" ondragstart="dragThought(event, '{{ thought.id }}')" ondragend="clearTrashHighlight()" data-thought-id="{{ thought.id }}" data-quadrant="goal">
                             <span class="thought-content">{{ thought.content }}</span>
                             <div class="thought-controls">
-                                <button onclick="editThought({{ thought.id }}, '{{ thought.content|e }}', this)" title="Edit">✏️</button>
-                                <select onchange="moveThought({{ thought.id }}, this.value, this)">
+                                <button onclick="editThought('{{ thought.id }}', '{{ thought.content|e }}', this)" title="Edit">✏️</button>
+                                <select onchange="moveThought('{{ thought.id }}', this.value, this)">
                                     <option value="">Move to...</option>
                                     <option value="status">Status</option>
                                     <option value="analysis">Analysis</option>
                                     <option value="plan">Plan</option>
                                 </select>
-                                <button onclick="deleteThought({{ thought.id }}, this)" title="Delete">🗑️</button>
+                                <button onclick="deleteThought('{{ thought.id }}', this)" title="Delete">🗑️</button>
                             </div>
                         </li>
                     {% endfor %}
@@ -168,14 +175,14 @@
                         <li class="thought-item" draggable="true" ondragstart="dragThought(event, '{{ thought.id }}')" ondragend="clearTrashHighlight()" data-thought-id="{{ thought.id }}" data-quadrant="analysis">
                             <span class="thought-content">{{ thought.content }}</span>
                             <div class="thought-controls">
-                                <button onclick="editThought({{ thought.id }}, '{{ thought.content|e }}', this)" title="Edit">✏️</button>
-                                <select onchange="moveThought({{ thought.id }}, this.value, this)">
+                                <button onclick="editThought('{{ thought.id }}', '{{ thought.content|e }}', this)" title="Edit">✏️</button>
+                                <select onchange="moveThought('{{ thought.id }}', this.value, this)">
                                     <option value="">Move to...</option>
                                     <option value="status">Status</option>
                                     <option value="goal">Goal</option>
                                     <option value="plan">Plan</option>
                                 </select>
-                                <button onclick="deleteThought({{ thought.id }}, this)" title="Delete">🗑️</button>
+                                <button onclick="deleteThought('{{ thought.id }}', this)" title="Delete">🗑️</button>
                             </div>
                         </li>
                     {% endfor %}
@@ -190,14 +197,14 @@
                         <li class="thought-item" draggable="true" ondragstart="dragThought(event, '{{ thought.id }}')" ondragend="clearTrashHighlight()" data-thought-id="{{ thought.id }}" data-quadrant="plan">
                             <span class="thought-content">{{ thought.content }}</span>
                             <div class="thought-controls">
-                                <button onclick="editThought({{ thought.id }}, '{{ thought.content|e }}', this)" title="Edit">✏️</button>
-                                <select onchange="moveThought({{ thought.id }}, this.value, this)">
+                                <button onclick="editThought('{{ thought.id }}', '{{ thought.content|e }}', this)" title="Edit">✏️</button>
+                                <select onchange="moveThought('{{ thought.id }}', this.value, this)">
                                     <option value="">Move to...</option>
                                     <option value="status">Status</option>
                                     <option value="goal">Goal</option>
                                     <option value="analysis">Analysis</option>
                                 </select>
-                                <button onclick="deleteThought({{ thought.id }}, this)" title="Delete">🗑️</button>
+                                <button onclick="deleteThought('{{ thought.id }}', this)" title="Delete">🗑️</button>
                             </div>
                         </li>
                     {% endfor %}
@@ -227,7 +234,10 @@
             </div>
             <div style="display:flex;gap:0.5em;align-items:center;">
                 <textarea id="interactive-gaps-input" placeholder="Type your response..." rows="4" style="flex:1;padding:0.7em 1em;border-radius:5px;border:1px solid #ccc;font-size:1em;resize:vertical;min-height:48px;max-height:180px;"></textarea>
-                <button id="interactive-gaps-send" style="background:#007bff;color:#fff;border:none;padding:0.7em 1.2em;border-radius:5px;font-size:1em;cursor:pointer;align-self:flex-end;">Send</button>
+                <div style="display:flex;flex-direction:column;gap:0.5em;">
+                    <button id="interactive-gaps-voice" class="voice-btn" title="Voice input" style="background:#28a745;color:#fff;border:none;padding:0.7em;border-radius:5px;font-size:1.2em;cursor:pointer;width:48px;height:48px;display:flex;align-items:center;justify-content:center;">🎤</button>
+                    <button id="interactive-gaps-send" style="background:#007bff;color:#fff;border:none;padding:0.7em 1.2em;border-radius:5px;font-size:1em;cursor:pointer;">Send</button>
+                </div>
             </div>
             <button id="interactive-gaps-close" style="background:#eee;color:#444;border:none;padding:0.5em 1em;border-radius:5px;font-size:0.9em;cursor:pointer;align-self:flex-end;">Close</button>
         </div>
@@ -263,6 +273,32 @@
 
     <!-- Notification -->
     <div class="notification"></div>
+
+    <!-- Quick Add Thought Modal -->
+    <div id="quick-add-thought-modal" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);z-index:5000;">
+        <div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);background:white;padding:2rem;border-radius:10px;box-shadow:0 4px 20px rgba(0,0,0,0.3);max-width:500px;width:90%;">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1.5rem;">
+                <h3 style="margin:0;color:#333;">Quick Add Thought</h3>
+                <button id="quick-add-close" style="background:none;border:none;font-size:1.5rem;cursor:pointer;color:#666;">&times;</button>
+            </div>
+            <div style="margin-bottom:1rem;">
+                <input id="quick-thought-input" type="text" placeholder="What's on your mind?" style="width:100%;padding:0.8rem;border:1px solid #ddd;border-radius:5px;font-size:1rem;box-sizing:border-box;">
+            </div>
+            <div style="margin-bottom:1.5rem;">
+                <select id="quick-thought-quadrant" style="width:100%;padding:0.8rem;border:1px solid #ddd;border-radius:5px;font-size:1rem;box-sizing:border-box;">
+                    <option value="auto">AI Decide</option>
+                    <option value="status">Status</option>
+                    <option value="goal">Goal</option>
+                    <option value="analysis">Analysis</option>
+                    <option value="plan">Plan</option>
+                </select>
+            </div>
+            <div style="display:flex;gap:1rem;">
+                <button id="quick-add-btn" style="flex:1;background:#007bff;color:white;border:none;padding:0.8rem;border-radius:5px;font-size:1rem;cursor:pointer;">Add Thought</button>
+                <button id="quick-voice-btn" class="voice-btn" title="Voice input" style="background:#28a745;color:white;border:none;padding:0.8rem;border-radius:5px;font-size:1.2rem;cursor:pointer;width:60px;">🎤</button>
+            </div>
+        </div>
+    </div>
 
     <!-- Board Initialization Script -->
     <script>
@@ -309,6 +345,192 @@
                     });
             });
         }
+
+        // Quick Add Thought Modal Functionality
+        const quickAddModal = document.getElementById('quick-add-thought-modal');
+        const quickAddLink = document.getElementById('quick-add-thought-link');
+        const quickAddClose = document.getElementById('quick-add-close');
+        const quickAddBtn = document.getElementById('quick-add-btn');
+        const quickThoughtInput = document.getElementById('quick-thought-input');
+        const quickThoughtQuadrant = document.getElementById('quick-thought-quadrant');
+
+        // Open Quick Add Modal
+        if (quickAddLink) {
+            quickAddLink.addEventListener('click', function(e) {
+                e.preventDefault();
+                quickAddModal.style.display = 'block';
+                quickThoughtInput.focus();
+            });
+        }
+
+        // Close Quick Add Modal
+        function closeQuickAddModal() {
+            quickAddModal.style.display = 'none';
+            quickThoughtInput.value = '';
+            quickThoughtQuadrant.value = 'auto';
+        }
+
+        if (quickAddClose) {
+            quickAddClose.addEventListener('click', closeQuickAddModal);
+        }
+
+        // Close modal when clicking outside
+        if (quickAddModal) {
+            quickAddModal.addEventListener('click', function(e) {
+                if (e.target === quickAddModal) {
+                    closeQuickAddModal();
+                }
+            });
+        }
+
+        // Handle Quick Add Thought submission
+        if (quickAddBtn) {
+            quickAddBtn.addEventListener('click', function() {
+                const thoughtText = quickThoughtInput.value.trim();
+                const quadrant = quickThoughtQuadrant.value;
+                
+                if (thoughtText) {
+                    // Use the existing addThought function from thought-management.js
+                    if (typeof addThought === 'function') {
+                        addThought(thoughtText, quadrant);
+                        closeQuickAddModal();
+                    } else {
+                        // Fallback: trigger the main add button
+                        const mainInput = document.getElementById('new-thought-input');
+                        const mainQuadrant = document.getElementById('new-thought-quadrant');
+                        const mainAddBtn = document.getElementById('add-thought-btn');
+                        
+                        if (mainInput && mainQuadrant && mainAddBtn) {
+                            mainInput.value = thoughtText;
+                            mainQuadrant.value = quadrant;
+                            mainAddBtn.click();
+                            closeQuickAddModal();
+                        }
+                    }
+                }
+            });
+        }
+
+        // Handle Enter key in quick add input
+        if (quickThoughtInput) {
+            quickThoughtInput.addEventListener('keypress', function(e) {
+                if (e.key === 'Enter') {
+                    quickAddBtn.click();
+                }
+            });
+        }
+
+        // Voice Recognition Functionality
+        (function() {
+            const voiceBtn = document.getElementById('voice-btn');
+            const interactiveVoiceBtn = document.getElementById('interactive-gaps-voice');
+            const quickVoiceBtn = document.getElementById('quick-voice-btn');
+            const input = document.getElementById('thought-input');
+            const interactiveInput = document.getElementById('interactive-gaps-input');
+            let recognition, recognizing = false;
+
+            if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
+                const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+                recognition = new SpeechRecognition();
+                recognition.lang = 'en-US';
+                recognition.interimResults = false;
+                recognition.maxAlternatives = 1;
+
+                let currentTarget = null;
+
+                recognition.onstart = function () {
+                    recognizing = true;
+                    if (currentTarget) {
+                        currentTarget.style.backgroundColor = '#ff4444';
+                        currentTarget.title = 'Listening... Click to stop';
+                    }
+                };
+                recognition.onend = function () {
+                    recognizing = false;
+                    if (currentTarget) {
+                        currentTarget.style.backgroundColor = currentTarget === voiceBtn ? '#28a745' : '#28a745';
+                        currentTarget.title = 'Voice input';
+                    }
+                    currentTarget = null;
+                };
+                recognition.onerror = function (e) {
+                    recognizing = false;
+                    if (currentTarget) {
+                        currentTarget.style.backgroundColor = currentTarget === voiceBtn ? '#28a745' : '#28a745';
+                        currentTarget.title = 'Voice input';
+                    }
+                    currentTarget = null;
+                    alert('Speech recognition error: ' + e.error);
+                };
+                recognition.onresult = function (e) {
+                    if (e.results && e.results[0] && e.results[0][0]) {
+                        let transcript = e.results[0][0].transcript.trim();
+                        if (currentTarget === voiceBtn && input) {
+                            input.value = transcript;
+                            input.focus();
+                        } else if (currentTarget === interactiveVoiceBtn && interactiveInput) {
+                            interactiveInput.value = transcript;
+                            interactiveInput.focus();
+                        } else if (currentTarget === quickVoiceBtn && quickThoughtInput) {
+                            quickThoughtInput.value = transcript;
+                            quickThoughtInput.focus();
+                        }
+                    }
+                };
+
+                // Main voice button (bottom right widget)
+                if (voiceBtn) {
+                    voiceBtn.addEventListener('click', function () {
+                        if (recognizing) {
+                            recognition.stop();
+                        } else {
+                            currentTarget = voiceBtn;
+                            recognition.start();
+                        }
+                    });
+                }
+
+                // Interactive Mode voice button
+                if (interactiveVoiceBtn) {
+                    interactiveVoiceBtn.addEventListener('click', function () {
+                        if (recognizing) {
+                            recognition.stop();
+                        } else {
+                            currentTarget = interactiveVoiceBtn;
+                            recognition.start();
+                        }
+                    });
+                }
+
+                // Quick Add modal voice button
+                if (quickVoiceBtn) {
+                    quickVoiceBtn.addEventListener('click', function () {
+                        if (recognizing) {
+                            recognition.stop();
+                        } else {
+                            currentTarget = quickVoiceBtn;
+                            recognition.start();
+                        }
+                    });
+                }
+            } else {
+                if (voiceBtn) {
+                    voiceBtn.disabled = true;
+                    voiceBtn.title = 'Speech recognition not supported in this browser.';
+                    voiceBtn.style.opacity = 0.3;
+                }
+                if (interactiveVoiceBtn) {
+                    interactiveVoiceBtn.disabled = true;
+                    interactiveVoiceBtn.title = 'Speech recognition not supported in this browser.';
+                    interactiveVoiceBtn.style.opacity = 0.3;
+                }
+                if (quickVoiceBtn) {
+                    quickVoiceBtn.disabled = true;
+                    quickVoiceBtn.title = 'Speech recognition not supported in this browser.';
+                    quickVoiceBtn.style.opacity = 0.3;
+                }
+            }
+        })();
     });
     </script>
 </body>

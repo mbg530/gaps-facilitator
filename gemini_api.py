@@ -11,7 +11,7 @@ def load_prompt(filename):
     with open(path, 'r', encoding='utf-8') as f:
         return f.read()
 
-def conversational_facilitator(prompt):
+def conversational_facilitator(prompt, conversation_history=None, quadrants=None):
     print("[GEMINI] conversational_facilitator called", flush=True)
     """
     Calls Gemini with a conversational prompt and returns a structured dict:

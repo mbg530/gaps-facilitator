@@ -28,6 +28,7 @@ class Board(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     title = db.Column(db.String(100), nullable=False)
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    created_at = db.Column(db.DateTime, nullable=False, server_default=db.func.now())
     thoughts = db.relationship('Thought', backref='board', lazy=True, passive_deletes=True)
     minutes = db.relationship('MeetingMinute', backref='board', lazy=True, passive_deletes=True)
 
