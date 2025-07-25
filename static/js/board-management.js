@@ -246,6 +246,10 @@ function handleExportData(e) {
 function selectBoard(boardId) {
     console.log('[DEBUG] Selecting board:', boardId);
     
+    // Save board ID to localStorage for persistence
+    localStorage.setItem('gaps-current-board-id', boardId);
+    console.log('[DEBUG] Board ID saved to localStorage:', boardId);
+    
     // Close the modal first
     const openBoardModal = document.getElementById('open-board-modal');
     if (openBoardModal) {
@@ -363,6 +367,10 @@ async function deleteBoardById(boardId) {
             showNotification('Board deleted successfully!');
             window.boardId = null;
             
+            // Clear board ID from localStorage since board was deleted
+            localStorage.removeItem('gaps-current-board-id');
+            console.log('[DEBUG] Board ID cleared from localStorage after deletion');
+            
             setTimeout(() => {
                 location.reload();
             }, 1500);
@@ -410,6 +418,9 @@ async function createNewBoard(boardName) {
             // Set the new board as active
             if (result.board_id) {
                 window.boardId = result.board_id;
+                // Save board ID to localStorage for persistence
+                localStorage.setItem('gaps-current-board-id', result.board_id);
+                console.log('[DEBUG] New board ID saved to localStorage:', result.board_id);
             }
             
             // Switch to the new board immediately

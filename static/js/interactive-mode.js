@@ -4,9 +4,115 @@ let interactiveGapsHistory = [];
 let suggestionRenderCount = 0;
 
 /**
+ * Save current board ID to localStorage
+ */
+function saveCurrentBoard() {
+    if (window.boardId) {
+        localStorage.setItem('gaps-current-board-id', window.boardId);
+        console.log('[DEBUG] Current board ID saved to localStorage:', window.boardId);
+    }
+}
+
+/**
+ * Restore board selection from localStorage
+ */
+function restoreCurrentBoard() {
+    const savedBoardId = localStorage.getItem('gaps-current-board-id');
+    if (savedBoardId && savedBoardId !== window.boardId) {
+        console.log('[DEBUG] Restoring board from localStorage:', savedBoardId, 'current:', window.boardId);
+        // Navigate to the saved board
+        window.location.href = `/facilitator?board_id=${savedBoardId}`;
+        return true;
+    }
+    return false;
+}
+
+/**
+ * Save conversation content to localStorage
+ */
+function saveConversationContent() {
+    const interactiveGapsChat = document.getElementById('interactive-gaps-chat');
+    if (interactiveGapsChat) {
+        const boardId = window.boardId || 'default';
+        const conversationData = {
+            chatContent: interactiveGapsChat.innerHTML,
+            history: interactiveGapsHistory,
+            suggestionCount: suggestionRenderCount,
+            timestamp: Date.now()
+        };
+        localStorage.setItem(`interactive-gaps-conversation-${boardId}`, JSON.stringify(conversationData));
+        console.log('[DEBUG] Conversation content saved to localStorage');
+    }
+}
+
+/**
+ * Restore conversation content from localStorage
+ */
+function restoreConversationContent() {
+    const boardId = window.boardId || 'default';
+    const savedData = localStorage.getItem(`interactive-gaps-conversation-${boardId}`);
+    
+    if (savedData) {
+        try {
+            const conversationData = JSON.parse(savedData);
+            const interactiveGapsChat = document.getElementById('interactive-gaps-chat');
+            
+            if (interactiveGapsChat && conversationData.chatContent) {
+                interactiveGapsChat.innerHTML = conversationData.chatContent;
+                interactiveGapsHistory = conversationData.history || [];
+                suggestionRenderCount = conversationData.suggestionCount || 0;
+                
+                // Scroll to bottom
+                interactiveGapsChat.scrollTop = interactiveGapsChat.scrollHeight;
+                
+                // Re-attach event listeners to suggestion buttons
+                reattachSuggestionListeners();
+                
+                console.log('[DEBUG] Conversation content restored from localStorage');
+                return true;
+            }
+        } catch (error) {
+            console.error('[DEBUG] Error restoring conversation content:', error);
+        }
+    }
+    return false;
+}
+
+/**
+ * Re-attach event listeners to suggestion buttons after restoration
+ */
+function reattachSuggestionListeners() {
+    const suggestionButtons = document.querySelectorAll('[id^="add-to-quadrant-btn-"]');
+    suggestionButtons.forEach(button => {
+        if (!button.hasAttribute('data-listener-attached')) {
+            // Extract thought and quadrant from button attributes or nearby elements
+            const thoughtText = button.getAttribute('data-thought');
+            const quadrant = button.getAttribute('data-quadrant');
+            
+            if (thoughtText && quadrant) {
+                button.addEventListener('click', async function() {
+                    await addSuggestedThought(thoughtText, quadrant, button);
+                });
+                button.setAttribute('data-listener-attached', 'true');
+            }
+        }
+    });
+}
+
+/**
  * Initialize Interactive Mode functionality
  */
 function initializeInteractiveMode() {
+    // RESTORE BOARD SELECTION FROM STORAGE FIRST
+    // This must happen before any other initialization
+    if (restoreCurrentBoard()) {
+        // If board restoration triggered a navigation, stop here
+        return;
+    }
+    
+    // Save current board to localStorage for future restoration
+    saveCurrentBoard();
+    
     const interactiveGapsModal = document.getElementById('interactive-gaps-modal');
     const interactiveGapsInput = document.getElementById('interactive-gaps-input');
     const interactiveGapsSend = document.getElementById('interactive-gaps-send');
@@ -19,11 +125,33 @@ function initializeInteractiveMode() {
     console.log('[DEBUG] minimizedIcon found:', !!minimizedIcon);
     console.log('[DEBUG] interactiveGapsLink found:', !!interactiveGapsLink);
 
-    // ENSURE ICON IS HIDDEN INITIALLY
+    // RESTORE MINIMIZED STATE FROM STORAGE
     if (minimizedIcon) {
-        minimizedIcon.style.display = 'none';
-        console.log('[DEBUG] Ensured minimized icon is hidden on page load');
+        const isMinimized = localStorage.getItem('interactive-gaps-minimized') === 'true';
+        if (isMinimized) {
+            // Restore minimized state
+            minimizedIcon.style.display = 'flex';
+            if (interactiveGapsModal) {
+                interactiveGapsModal.style.display = 'none';
+            }
+            console.log('[DEBUG] Restored minimized state from storage');
+        } else {
+            // Default to hidden
+            minimizedIcon.style.display = 'none';
+            console.log('[DEBUG] Interactive Mode not minimized, hiding restore icon');
+        }
     }
+    
+    // RESTORE CONVERSATION CONTENT FROM STORAGE
+    // Wait a bit for the DOM to be fully ready, then restore conversation
+    setTimeout(() => {
+        if (window.boardId) {
+            const restored = restoreConversationContent();
+            if (restored) {
+                console.log('[DEBUG] Conversation content restored on page load');
+            }
+        }
+    }, 100);
     
     // Setup info dropdown functionality
     const infoButton = document.getElementById('interactive-gaps-info');
@@ -124,12 +252,17 @@ function initializeInteractiveMode() {
             const chatDiv = document.getElementById('interactive-gaps-chat');
             if (chatDiv) {
                 chatDiv.innerHTML = '<div style="color:#666;font-style:italic;text-align:center;padding:2em;">Conversation has been reset. Start a new conversation by typing below.</div>';
-            }
-            
-            // Clear the input field
-            const inputField = document.getElementById('interactive-gaps-input');
-            if (inputField) {
-                inputField.value = '';
+                
+                // Clear conversation history
+                interactiveGapsHistory = [];
+                suggestionRenderCount = 0;
+                
+                // Clear saved conversation content from localStorage
+                const boardId = window.boardId || 'default';
+                localStorage.removeItem(`interactive-gaps-conversation-${boardId}`);
+                console.log('[DEBUG] Conversation content cleared from localStorage');
+                
+                console.log('[DEBUG] Interactive Mode conversation cleared');
             }
             
             // Reset conversation state in session storage
@@ -288,6 +421,9 @@ function initializeInteractiveMode() {
             console.log('[DEBUG] Minimized icon clicked, restoring modal');
             minimizedIcon.style.display = 'none';
             
+            // Clear minimized state from localStorage
+            localStorage.removeItem('interactive-gaps-minimized');
+            
             // Use the same restore logic as the Interactive Mode button
             // Force complete modal reset with EXTREME visual debugging
             interactiveGapsModal.style.display = 'flex';
@@ -420,6 +556,9 @@ function sendInteractiveMessage() {
     // Display user message
     interactiveGapsChat.innerHTML += `<div style='margin-top:0.7em;color:#333;'><b>You:</b> ${userInput}</div>`;
     interactiveGapsHistory.push({ role: 'user', content: userInput });
+    
+    // Save conversation content after adding user message
+    saveConversationContent();
 
     // Gather current quadrants
     const quadrants = {
@@ -457,17 +596,17 @@ function sendInteractiveMessage() {
                 displaySuggestions(result.suggestions.add_to_quadrant);
             }
         } else if (result.error) {
-            interactiveGapsChat.innerHTML += `<div style='margin-top:0.7em;color:#c00;'><b>AI:</b> Error: ${result.error}</div>`;
+            interactiveGapsChat.innerHTML += `<div style='margin-top:0.7em;color:#c00;'><b>GAPS:</b> Error: ${result.error}</div>`;
         } else {
             console.log('[DEBUG] No result.reply found in user message response:', result);
-            interactiveGapsChat.innerHTML += `<div style='margin-top:0.7em;color:#c00;'><b>AI:</b> No response from AI.</div>`;
+            interactiveGapsChat.innerHTML += `<div style='margin-top:0.7em;color:#c00;'><b>GAPS:</b> No response from AI.</div>`;
         }
         
         interactiveGapsChat.scrollTop = interactiveGapsChat.scrollHeight;
     })
     .catch(err => {
         console.error('[DEBUG] Error:', err);
-        interactiveGapsChat.innerHTML += `<div style='margin-top:0.7em;color:#c00;'><b>AI:</b> Error contacting AI. Please try again.</div>`;
+        interactiveGapsChat.innerHTML += `<div style='margin-top:0.7em;color:#c00;'><b>GAPS:</b> Error contacting AI. Please try again.</div>`;
         interactiveGapsChat.scrollTop = interactiveGapsChat.scrollHeight;
     });
 
@@ -488,13 +627,16 @@ function displayAIMessage(message) {
     
     if (isResetMessage) {
         // Replace reset message with AI response
-        interactiveGapsChat.innerHTML = `<div style='margin-top:0.7em;color:#007bff;'><b>AI:</b> <span style='color:#444;'>${formattedMessage}</span></div>`;
+        interactiveGapsChat.innerHTML = `<div style='margin-top:0.7em;color:#007bff;'><b>GAPS:</b> <span style='color:#444;'>${formattedMessage}</span></div>`;
     } else {
         // Append to existing conversation
-        interactiveGapsChat.innerHTML += `<div style='margin-top:0.7em;color:#007bff;'><b>AI:</b> <span style='color:#444;'>${formattedMessage}</span></div>`;
+        interactiveGapsChat.innerHTML += `<div style='margin-top:0.7em;color:#007bff;'><b>GAPS:</b> <span style='color:#444;'>${formattedMessage}</span></div>`;
     }
     
     interactiveGapsChat.scrollTop = interactiveGapsChat.scrollHeight;
+    
+    // Save conversation content to localStorage
+    saveConversationContent();
 }
 
 /**
@@ -503,7 +645,7 @@ function displayAIMessage(message) {
 function displaySuggestions(suggestions) {
     const interactiveGapsChat = document.getElementById('interactive-gaps-chat');
     
-    let sugHtml = `<div class='ai-suggest-label' style='margin:0.7em 0 0.2em 0;font-weight:bold;color:#007bff;'>AI suggests adding the following:</div>`;
+    let sugHtml = `<div class='ai-suggest-label' style='margin:0.7em 0 0.2em 0;font-weight:bold;color:#007bff;'>GAPS suggests adding the following:</div>`;
     
     suggestions.forEach(function(item, idx) {
         if (item.quadrant && item.thought) {
@@ -512,7 +654,7 @@ function displaySuggestions(suggestions) {
                 <div style='margin-bottom:0.3em;padding:0.3em 0.5em;background:#f5faff;border-radius:6px;'>
                     <span style='color:#007bff;font-weight:bold;'>${item.quadrant.charAt(0).toUpperCase() + item.quadrant.slice(1)}:</span>
                     <span class='ai-suggested-thought'>${item.thought}</span>
-                    <button id='${btnId}' style='margin-left:0.7em;font-size:0.95em;padding:0.2em 0.7em;background:#007bff;color:#fff;border:none;border-radius:4px;cursor:pointer;'>Add to Quadrant</button>
+                    <button id='${btnId}' data-thought='${item.thought.replace(/'/g, '&apos;')}' data-quadrant='${item.quadrant}' style='margin-left:0.7em;font-size:0.95em;padding:0.2em 0.7em;background:#007bff;color:#fff;border:none;border-radius:4px;cursor:pointer;'>Add to Quadrant</button>
                 </div>`;
             
             // Add event listener for the button
@@ -522,6 +664,7 @@ function displaySuggestions(suggestions) {
                     btn.addEventListener('click', async function() {
                         await addSuggestedThought(item.thought, item.quadrant, btn);
                     });
+                    btn.setAttribute('data-listener-attached', 'true');
                 }
             }, 0);
         }
@@ -529,6 +672,9 @@ function displaySuggestions(suggestions) {
     
     interactiveGapsChat.innerHTML += `<div id="ai-suggestion-box">${sugHtml}</div>`;
     suggestionRenderCount++;
+    
+    // Save conversation content after adding suggestions
+    saveConversationContent();
 }
 
 /**
@@ -629,6 +775,9 @@ function setupDraggableModal(interactiveGapsModal) {
                     console.log('[DEBUG] Setting minimizedIcon display to flex');
                     minimizedIcon.style.display = 'flex';
                     
+                    // Save minimized state to localStorage
+                    localStorage.setItem('interactive-gaps-minimized', 'true');
+                    
                     // Check if it was set properly
                     console.log('[DEBUG] minimizedIcon display after setting:', minimizedIcon.style.display);
                     console.log('[DEBUG] minimizedIcon computed style:', window.getComputedStyle(minimizedIcon).display);
@@ -637,7 +786,7 @@ function setupDraggableModal(interactiveGapsModal) {
                     console.log('[DEBUG] minimizedIcon left:', window.getComputedStyle(minimizedIcon).left);
                     console.log('[DEBUG] minimizedIcon z-index:', window.getComputedStyle(minimizedIcon).zIndex);
                     
-                    console.log('[DEBUG] Modal minimized, showing restore icon');
+                    console.log('[DEBUG] Modal minimized, showing restore icon, state saved to localStorage');
                 } catch (error) {
                     console.error('[ERROR] Failed to show minimized icon:', error);
                 }
