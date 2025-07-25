@@ -7,8 +7,8 @@ export FLASK_ENV=development
 if [ -f .env ]; then
     export $(cat .env | grep -v '^#' | xargs)
 fi
-export AI_PROVIDER=openai  # Use OpenAI with hybrid categorization
+export AI_PROVIDER=openai  # Use openai or gemini with hybrid categorization
 export OPENAI_MODEL=gpt-4-turbo
 export SHOW_JSON_WARNING=false
-export VERSION=experimental_v3
+export APP_VERSION='072425 0707'
 flask run --debug --port=5001

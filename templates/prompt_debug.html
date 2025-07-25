@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Prompt Debug Console - GAPS Facilitator</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        .debug-entry {
+            border: 1px solid #dee2e6;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            background: #f8f9fa;
+        }
+        .debug-header {
+            background: #e9ecef;
+            padding: 10px 15px;
+            border-bottom: 1px solid #dee2e6;
+            font-weight: bold;
+        }
+        .debug-section {
+            margin: 15px 0;
+        }
+        .debug-label {
+            font-weight: bold;
+            color: #495057;
+            margin-bottom: 5px;
+        }
+        .debug-content {
+            background: white;
+            border: 1px solid #dee2e6;
+            border-radius: 4px;
+            padding: 10px;
+            font-family: monospace;
+            font-size: 0.9em;
+            white-space: pre-wrap;
+            max-height: 300px;
+            overflow-y: auto;
+        }
+        .suggestion-item {
+            background: #e7f3ff;
+            border: 1px solid #b3d9ff;
+            border-radius: 4px;
+            padding: 8px;
+            margin: 5px 0;
+        }
+        .quadrant-goal { border-left: 4px solid #28a745; }
+        .quadrant-status { border-left: 4px solid #dc3545; }
+        .quadrant-analysis { border-left: 4px solid #ffc107; }
+        .quadrant-plan { border-left: 4px solid #007bff; }
+        .auto-refresh {
+            position: fixed;
+            top: 80px;
+            right: 20px;
+            z-index: 1000;
+            background: white;
+            padding: 8px 12px;
+            border: 1px solid #dee2e6;
+            border-radius: 6px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+    </style>
+</head>
+<body>
+    <div class="container-fluid mt-3">
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <h2>🔍 Prompt Debug Console</h2>
+            <div>
+                <button class="btn btn-primary me-2" onclick="refreshDebugLog()">🔄 Refresh</button>
+                <button class="btn btn-warning me-2" onclick="clearDebugLog()">🗑️ Clear Log</button>
+                <a href="/facilitator" class="btn btn-secondary">← Back to App</a>
+            </div>
+        </div>
+
+        <div class="auto-refresh">
+            <div class="form-check form-switch">
+                <input class="form-check-input" type="checkbox" id="autoRefresh" checked>
+                <label class="form-check-label" for="autoRefresh">Auto-refresh (5s)</label>
+            </div>
+        </div>
+
+        <!-- Spacer to avoid overlap with auto-refresh toggle -->
+        <div style="height: 20px;"></div>
+
+        <div class="alert alert-info">
+            <strong>How to Use:</strong> This console shows the complete flow of every Interactive Mode conversation. 
+            Test conversations in Interactive Mode and watch the debug information appear here in real-time.
+        </div>
+
+        <div id="debugEntries">
+            <!-- Debug entries will be loaded here -->
+        </div>
+
+        <div id="noEntries" class="text-center text-muted mt-5" style="display: none;">
+            <h4>No debug entries yet</h4>
+            <p>Start a conversation in Interactive Mode to see debug information here.</p>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        let autoRefreshInterval;
+
+        function refreshDebugLog() {
+            fetch('/admin/debug_entries')
+                .then(response => response.json())
+                .then(data => {
+                    const container = document.getElementById('debugEntries');
+                    const noEntries = document.getElementById('noEntries');
+                    
+                    if (data.entries && data.entries.length > 0) {
+                        container.innerHTML = data.entries.map(entry => createDebugEntryHTML(entry)).join('');
+                        container.style.display = 'block';
+                        noEntries.style.display = 'none';
+                    } else {
+                        container.style.display = 'none';
+                        noEntries.style.display = 'block';
+                    }
+                })
+                .catch(error => {
+                    console.error('Error fetching debug entries:', error);
+                });
+        }
+
+        function createDebugEntryHTML(entry) {
+            return `
+                <div class="debug-entry">
+                    <div class="debug-header">
+                        🕒 ${entry.timestamp} | 👤 User: "${entry.user_input}"
+                    </div>
+                    <div class="row p-3">
+                        <div class="col-md-6">
+                            <div class="debug-section">
+                                <div class="debug-label">📝 Full Prompt Sent to AI:</div>
+                                <div class="debug-content">${escapeHtml(entry.prompt)}</div>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="debug-section">
+                                <div class="debug-label">🤖 Raw AI Response:</div>
+                                <div class="debug-content">${escapeHtml(entry.ai_response)}</div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="row p-3">
+                        <div class="col-md-6">
+                            <div class="debug-section">
+                                <div class="debug-label">💬 Message to User:</div>
+                                <div class="debug-content">${escapeHtml(entry.clean_message)}</div>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="debug-section">
+                                <div class="debug-label">📊 Suggestions (${entry.suggestions.length}):</div>
+                                ${entry.suggestions.map(suggestion => `
+                                    <div class="suggestion-item quadrant-${suggestion.quadrant}">
+                                        <strong>${suggestion.quadrant.toUpperCase()}:</strong> ${escapeHtml(suggestion.thought)}
+                                    </div>
+                                `).join('')}
+                                ${entry.suggestions.length === 0 ? '<div class="text-muted">No suggestions</div>' : ''}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        function clearDebugLog() {
+            if (confirm('Are you sure you want to clear all debug entries?')) {
+                fetch('/admin/clear_debug_log', { method: 'POST' })
+                    .then(() => refreshDebugLog())
+                    .catch(error => console.error('Error clearing debug log:', error));
+            }
+        }
+
+        function toggleAutoRefresh() {
+            const checkbox = document.getElementById('autoRefresh');
+            if (checkbox.checked) {
+                autoRefreshInterval = setInterval(refreshDebugLog, 5000);
+            } else {
+                clearInterval(autoRefreshInterval);
+            }
+        }
+
+        // Initialize
+        document.getElementById('autoRefresh').addEventListener('change', toggleAutoRefresh);
+        refreshDebugLog();
+        toggleAutoRefresh();
+    </script>
+</body>
+</html>

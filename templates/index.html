@@ -46,7 +46,7 @@
                 <i class="fa fa-cogs" style="margin-right:0.5em;"></i>🧪 Rule Tester
             </a>
             <a href="/debug" style="display:block;padding:0.7em 1em;text-decoration:none;color:#17a2b8;border-bottom:1px solid #eee;">
-                <i class="fa fa-bug" style="margin-right:0.5em;"></i>🔍 Debug Console
+                <i class="fa fa-bug" style="margin-right:0.5em;"></i>🔍 Rule Tester Debug Console
             </a>
             <a id="help-link" href="#" style="display:block;padding:0.7em 1em;text-decoration:none;color:#333;">
                 <i class="fa fa-question-circle" style="margin-right:0.5em;"></i>Help
@@ -61,12 +61,19 @@
             <a href="/admin/prompt_editor" id="prompt-editor-link" style="display:block;padding:0.7em 1em;text-decoration:none;color:#28a745;border-bottom:1px solid #eee;">
                 <i class="fa fa-edit" style="margin-right:0.5em;"></i>Prompt Editor
             </a>
+            <a href="/admin/prompt_debug" id="prompt-debug-link" style="display:block;padding:0.7em 1em;text-decoration:none;color:#28a745;border-bottom:1px solid #eee;">
+                <i class="fa fa-bug" style="margin-right:0.5em;"></i>Prompt Debug Console
+            </a>
             {% endif %}
             {% if current_user.is_authenticated %}
-            <a href="{{ url_for('logout') }}" id="logout-link" style="display:block;padding:0.7em 1em;text-decoration:none;color:#333;">
+            <a href="{{ url_for('logout') }}" id="logout-link" style="display:block;padding:0.7em 1em;text-decoration:none;color:#333;border-bottom:1px solid #eee;">
                 <i class="fa fa-sign-out" style="margin-right:0.5em;"></i>Logout
             </a>
             {% endif %}
+            <!-- Version Display -->
+            <div style="padding:0.5em 1em;color:#888;font-size:0.85em;text-align:center;border-top:1px solid #eee;background:#f8f9fa;">
+                Version: {{ version or 'Unknown' }}
+            </div>
         </div>
     </div>
 
@@ -262,10 +269,10 @@
                     <li><strong>Plan:</strong> Actions, steps, solutions</li>
                 </ul>
                 <h4>How to Use</h4>
-                <p>1. Add thoughts using the input field above</p>
-                <p>2. Let AI automatically categorize them, or choose a specific quadrant</p>
-                <p>3. Use Interactive Mode for guided problem-solving conversations</p>
-                <p>4. Move thoughts between quadrants as your understanding evolves</p>
+                <p>1. Use Interactive Mode for guided problem-solving conversations</p>
+                <p>2. Your goal is to organize your thoughts into the appropriate columns in order to clarify your thinking on the issue or problem you're dealing with</p>
+                <p>3. Move thoughts between quadrants as your understanding evolves</p>
+                <p>4. Use the Quick Add Thought selection when you're making minor changes. Also, move or delete thoughts easily between quadrants as you need to.</p>
             </div>
             <button onclick="document.getElementById('help-overlay').style.display='none'" style="background:#007bff;color:#fff;border:none;padding:0.6em 1.2em;border-radius:5px;font-size:1em;cursor:pointer;margin-top:1em;">Close</button>
         </div>
@@ -286,7 +293,7 @@
             </div>
             <div style="margin-bottom:1.5rem;">
                 <select id="quick-thought-quadrant" style="width:100%;padding:0.8rem;border:1px solid #ddd;border-radius:5px;font-size:1rem;box-sizing:border-box;">
-                    <option value="auto">AI Decide</option>
+                    <option value="auto">Let GAPS decide</option>
                     <option value="status">Status</option>
                     <option value="goal">Goal</option>
                     <option value="analysis">Analysis</option>

@@ -49,28 +49,41 @@ def conversational_facilitator(prompt, conversation_history=None, quadrants=None
         except Exception as e:
             # Fallback: treat as plain text
             if 'clarify' in text.lower() or 'question' in text.lower():
-                return {'action': 'ask_clarification', 'question': text}
+                return text
             # Otherwise treat as a single thought
-            return {'action': 'classify_and_add', 'thoughts': [{'content': text, 'quadrant': 'status'}]}
+            json_response = {'add_to_quadrant': [{'quadrant': 'status', 'thought': text}]}
+            json_str = _json.dumps(json_response)
+            return f"{json_str}\n\n{text}"
         # Interpret structured response
         if result.get('action') == 'ask_clarification' and 'question' in result:
-            return {'action': 'ask_clarification', 'question': result['question']}
+            return result['question']  # Return just the question text
         elif result.get('action') == 'classify_and_add' and 'thoughts' in result:
-            return {'action': 'classify_and_add', 'thoughts': result['thoughts']}
+            # Convert to expected format and include user-facing message
+            thoughts_list = result['thoughts']
+            json_response = {'add_to_quadrant': []}
+            for thought in thoughts_list:
+                json_response['add_to_quadrant'].append({
+                    'quadrant': thought.get('quadrant', 'status'),
+                    'thought': thought.get('content', '')
+                })
+            # Include a user-facing message after the JSON
+            json_str = _json.dumps(json_response)
+            message = thoughts_list[0].get('content', '') if thoughts_list else 'I can help you solve problems. What gap is on your mind?'
+            return f"{json_str}\n\n{message}"
         # If it looks like a single thought classification
         if 'quadrant' in result and 'thought' in result:
-            return {
-                'action': 'classify_and_add',
-                'thoughts': [{
-                    'content': result['thought'],
-                    'quadrant': QUADRANT_MAP.get(result['quadrant'].strip().lower(), 'status')
-                }]
-            }
+            json_response = {'add_to_quadrant': [{
+                'quadrant': QUADRANT_MAP.get(result['quadrant'].strip().lower(), 'status'),
+                'thought': result['thought']
+            }]}
+            json_str = _json.dumps(json_response)
+            message = result['thought']
+            return f"{json_str}\n\n{message}"
         # If it looks like a clarification
         if 'question' in result:
-            return {'action': 'ask_clarification', 'question': result['question']}
+            return result['question']
         # Fallback
-        return {'action': 'ask_clarification', 'question': text}
+        return text
     except Exception as e:
         import traceback
         print('Exception in conversational_facilitator:', e)

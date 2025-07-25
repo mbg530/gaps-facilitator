@@ -43,6 +43,37 @@ if AI_PROVIDER == "openai":
 else:
     ai_api = gemini_api
 
+# Helper function to generate version string with AI provider
+def get_version_with_provider():
+    version = os.environ.get('APP_VERSION', 'dev')
+    provider = AI_PROVIDER.upper()
+    return f"{version} ({provider})"
+
+# Debug storage for prompt engineering
+debug_entries = []
+MAX_DEBUG_ENTRIES = 50  # Keep last 50 entries
+
+def add_debug_entry(user_input, prompt, ai_response, clean_message, suggestions):
+    """Store debug information for web-based debug console"""
+    from datetime import datetime
+    
+    entry = {
+        'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+        'user_input': user_input,
+        'prompt': prompt,
+        'ai_response': ai_response,
+        'clean_message': clean_message,
+        'suggestions': suggestions or []
+    }
+    
+    debug_entries.append(entry)
+    
+    # Keep only the last MAX_DEBUG_ENTRIES
+    if len(debug_entries) > MAX_DEBUG_ENTRIES:
+        debug_entries.pop(0)
+    
+    print(f"[DEBUG STORAGE] Added entry #{len(debug_entries)}: {user_input[:50]}...", flush=True)
+
 app = Flask(__name__)
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///database.db'
 
@@ -141,14 +172,14 @@ def facilitator():
         boards = board_store.list_boards()
         board = board_store.get_board(board_id)
         if not board:
-            return render_template('index.html', boards=boards, board=None, quadrants={}, thoughts={}, version=os.environ.get('VERSION', 'dev'))
+            return render_template('index.html', boards=boards, board=None, quadrants={}, thoughts={}, version=get_version_with_provider())
         # Prepare thoughts dict
         thoughts = {q: [] for q in ['status', 'goal', 'analysis', 'plan']}
         for t in board.get('thoughts', []):
             q = t.get('quadrant')
             if q in thoughts:
                 thoughts[q].append(t)
-        return render_template('index.html', boards=boards, board=board, quadrants=None, thoughts=thoughts, version=os.environ.get('VERSION', 'dev'))
+        return render_template('index.html', boards=boards, board=board, quadrants=None, thoughts=thoughts, version=get_version_with_provider())
     else:
         # Default: use database
         board = get_current_board()
@@ -171,7 +202,7 @@ def facilitator():
         print(f"========================")
         
         if not board:
-            return render_template('index.html', boards=[], board=None, quadrants={}, thoughts={}, version=os.environ.get('VERSION', 'dev'))
+            return render_template('index.html', boards=[], board=None, quadrants={}, thoughts={}, version=get_version_with_provider())
         
         # DEBUG: Log thoughts retrieval
         print(f"[DEBUG] Retrieving thoughts for board {board.id}...")
@@ -183,7 +214,7 @@ def facilitator():
             thoughts[t.quadrant].append(t)
         
         print(f"[DEBUG] Final thoughts dict: {[(k, len(v)) for k, v in thoughts.items()]}")
-        return render_template('index.html', boards=boards, board=board, quadrants=None, thoughts=thoughts, version=os.environ.get('VERSION', 'dev'))
+        return render_template('index.html', boards=boards, board=board, quadrants=None, thoughts=thoughts, version=get_version_with_provider())
 
 
 from flask_wtf.csrf import validate_csrf
@@ -536,7 +567,25 @@ def interactive_gaps():
         import json
         def extract_json_and_message(reply_text):
             import json
+            import re
             reply_text = reply_text.lstrip()
+            
+            # Handle markdown-wrapped JSON (e.g., ```json {...} ```)
+            markdown_match = re.search(r'```(?:json)?\s*({.*?})\s*```', reply_text, re.DOTALL)
+            if markdown_match:
+                json_part = markdown_match.group(1)
+                # Get text before and after the markdown block
+                before_json = reply_text[:markdown_match.start()].strip()
+                after_json = reply_text[markdown_match.end():].strip()
+                message_part = (before_json + ' ' + after_json).strip()
+                try:
+                    parsed_json = json.loads(json_part)
+                    return parsed_json, message_part
+                except Exception as e:
+                    print(f"[DEBUG] Failed to parse markdown-wrapped JSON: {e}", flush=True)
+                    # Fall through to regular processing
+            
+            # Handle regular JSON at start of text
             if reply_text.startswith('{') or reply_text.startswith('['):
                 stack = []
                 end = None
@@ -554,9 +603,13 @@ def interactive_gaps():
                             break
                 if end:
                     json_part = reply_text[:end]
-                    message_part = reply_text[end:].lstrip(' \n,]}')
+                    # More careful message extraction - only strip leading whitespace and newlines
+                    message_part = reply_text[end:].lstrip(' \n\t')
                     try:
                         parsed_json = json.loads(json_part)
+                        # If there's no conversational message after JSON, provide a default response
+                        if not message_part.strip():
+                            message_part = "I've processed your input and updated the quadrants accordingly."
                     except Exception as e:
                         print(f"[DEBUG] Failed to parse JSON from AI reply: {e}", flush=True)
                         parsed_json = None
@@ -564,6 +617,11 @@ def interactive_gaps():
             # If no JSON at the start, just return the message
             return None, reply_text.strip()
         suggestions, reply_text_clean = extract_json_and_message(reply_text)
+        
+        # === PROMPT ENGINEERING DEBUG: JSON EXTRACTION ===
+        print(f"\n🔍 JSON EXTRACTION RESULTS:", flush=True)
+        print(f"   📊 Extracted JSON: {suggestions}", flush=True)
+        print(f"   💬 Clean Message: '{reply_text_clean}'", flush=True)
         
         # === HYBRID INTEGRATION: Inject rule-based result if high confidence ===
         if rule_based_suggestion:
@@ -595,7 +653,28 @@ def interactive_gaps():
                 'need recommendations',
                 'should start with goals',
                 'should start with',
-                'recommendations for how to proceed'
+                'recommendations for how to proceed',
+                # Greeting and conversational content filters
+                'i can help you solve problems',
+                'what gap is on your mind',
+                'what problem are you hoping to solve',
+                'tell me about your goals',
+                'which area would you like to start',
+                'anything more for goals',
+                'anything else you want to add',
+                'ok? anything more',
+                'want to move or edit it',
+                'edit wording or move it',
+                'how do you think this might be impacting',
+                'what do you think about',
+                'does that sound right',
+                'make sense?',
+                'sound good?',
+                'i see you have a goal',
+                'what would you like to work on next',
+                'goals, status, analysis, or plans',
+                'which quadrant should we work on',
+                'what should we focus on'
             ]
             
             # Build list of existing quadrant items for duplicate detection
@@ -750,6 +829,34 @@ def interactive_gaps():
         if patched:
             print("[BACKEND PATCH] Prepended missing JSON to AI reply:", reply_text, flush=True)
 
+        # === PROMPT ENGINEERING DEBUG: FINAL OUTPUT ===
+        print(f"\n🎆 FINAL OUTPUT TO USER:", flush=True)
+        print(f"   💬 Message to User: '{reply_text_clean}'", flush=True)
+        # Safe handling of suggestions that might be None
+        suggestions_list = suggestions.get('add_to_quadrant', []) if suggestions else []
+        print(f"   📊 Suggestions Count: {len(suggestions_list)}", flush=True)
+        if suggestions_list:
+            for i, suggestion in enumerate(suggestions_list):
+                print(f"   📝 Suggestion {i+1}: {suggestion.get('quadrant', 'unknown').upper()} - '{suggestion.get('thought', 'unknown')}'", flush=True)
+        print("="*80 + "\n", flush=True)
+        
+        # Store debug information for web-based console
+        suggestions_for_debug = []
+        if suggestions_list:
+            for suggestion in suggestions_list:
+                suggestions_for_debug.append({
+                    'quadrant': suggestion.get('quadrant', 'unknown'),
+                    'thought': suggestion.get('thought', 'unknown')
+                })
+        
+        add_debug_entry(
+            user_input=user_input,
+            prompt=prompt,
+            ai_response=reply_text,
+            clean_message=reply_text_clean,
+            suggestions=suggestions_for_debug
+        )
+        
         # Return AI response to frontend
         # Defensive: always return both keys
         if not isinstance(suggestions, dict) or 'add_to_quadrant' not in suggestions:
@@ -1014,20 +1121,33 @@ def move_thought():
 
 @app.route('/delete_thought', methods=['POST'])
 def delete_thought():
-    # ... existing code ...
+    print("=== ENTERED DELETE_THOUGHT ROUTE ===", flush=True)
     data = request.get_json()
+    print(f"[DEBUG] Delete thought received data: {data}", flush=True)
     thought_id = data.get('thought_id')
+    print(f"[DEBUG] Looking for thought_id: {thought_id}", flush=True)
+    
+    if not thought_id:
+        print("[DEBUG] No thought_id provided", flush=True)
+        return jsonify({'success': False, 'error': 'No thought_id provided'}), 400
+    
     thought = Thought.query.get(thought_id)
+    print(f"[DEBUG] Found thought: {thought}", flush=True)
+    
     if thought:
         board_id = thought.board_id
+        print(f"[DEBUG] Deleting thought {thought_id} from board {board_id}", flush=True)
         db.session.delete(thought)
         db.session.commit()
         # Log meeting minute
         minute = MeetingMinute(board_id=board_id, action='delete', detail=f"Deleted thought ID {thought_id}")
         db.session.add(minute)
         db.session.commit()
+        print(f"[DEBUG] Successfully deleted thought {thought_id}", flush=True)
         return jsonify({'success': True})
-    return jsonify({'success': False}), 400
+    
+    print(f"[DEBUG] Thought {thought_id} not found in database", flush=True)
+    return jsonify({'success': False, 'error': f'Thought {thought_id} not found'}), 400
 
 @app.route('/update_thought', methods=['POST'])
 def update_thought():
@@ -1266,13 +1386,28 @@ def ai_conversation():
     print(prompt)
     print("======================")
 
+    # === PROMPT ENGINEERING DEBUG LOGGING ===
+    print("\n" + "="*80, flush=True)
+    print(" PROMPT ENGINEERING DEBUG - COMPLETE FLOW", flush=True)
+    print("="*80, flush=True)
+    print(f" USER INPUT: {user_input}", flush=True)
+    print(f" AI PROVIDER: {os.environ.get('AI_PROVIDER', 'openai')}", flush=True)
+    print(f" CURRENT QUADRANTS: {quadrants}", flush=True)
+    print("\n FULL PROMPT BEING SENT TO AI:", flush=True)
+    print("-" * 60, flush=True)
+    print(prompt, flush=True)
+    print("-" * 60, flush=True)
+
     # Call your AI (Gemini or OpenAI)
     try:
         conversational_facilitator = ai_api.conversational_facilitator
         ai_result = conversational_facilitator(prompt)
         
         # DEBUG: Log the AI response
-        print("=== AI RESPONSE ===")
+        print(f"\n RAW AI RESPONSE:", flush=True)
+        print("-" * 60, flush=True)
+        print(ai_result, flush=True)
+        print("-" * 60, flush=True)
         print(f"AI Result Type: {type(ai_result)}")
         print(f"AI Result: {ai_result}")
         print(f"AI Action: {ai_result.get('action')}")
@@ -2242,6 +2377,44 @@ def delete_rule():
         })
     except Exception as e:
         return jsonify({'error': f'Failed to delete rule: {str(e)}'}), 500
+
+# ============================================================================
+# PROMPT DEBUG CONSOLE ROUTES
+# ============================================================================
+
+@app.route('/admin/prompt_debug')
+@login_required
+def prompt_debug():
+    """Web-based debug console for prompt engineering"""
+    if not current_user.is_admin:
+        return "Unauthorized", 403
+    return render_template('prompt_debug.html')
+
+@app.route('/admin/debug_entries')
+@login_required
+def get_debug_entries():
+    """API endpoint to get debug entries for the web console"""
+    if not current_user.is_admin:
+        return jsonify({'error': 'Unauthorized'}), 403
+    
+    # Return debug entries in reverse order (newest first)
+    return jsonify({
+        'entries': list(reversed(debug_entries)),
+        'count': len(debug_entries)
+    })
+
+@app.route('/admin/clear_debug_log', methods=['POST'])
+@login_required
+def clear_debug_log():
+    """Clear all debug entries"""
+    if not current_user.is_admin:
+        return jsonify({'error': 'Unauthorized'}), 403
+    
+    global debug_entries
+    debug_entries.clear()
+    print("[DEBUG STORAGE] Debug log cleared by admin", flush=True)
+    
+    return jsonify({'success': True, 'message': 'Debug log cleared'})
 
 if __name__ == '__main__':
     with app.app_context():
