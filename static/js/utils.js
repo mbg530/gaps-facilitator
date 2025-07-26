@@ -75,7 +75,7 @@ function refreshQuadrants() {
 /**
  * Update quadrant in background without page refresh (for Interactive Mode)
  */
-function updateQuadrantInBackground(quadrant, thought) {
+function updateQuadrantInBackground(quadrant, thought, thoughtId = null) {
     console.log(`[DEBUG] Background update: Adding "${thought}" to ${quadrant} quadrant`);
     
     // Find the quadrant container (using actual template IDs)
@@ -104,15 +104,15 @@ function updateQuadrantInBackground(quadrant, thought) {
     thoughtElement.innerHTML = `
         <span class="thought-content">${thought}</span>
         <div class="thought-controls">
-            <button onclick="editThought(0, '${thought.replace(/'/g, "\\'")}, this)" title="Edit">✏️</button>
-            <select onchange="moveThought(0, this.value, this)">
+            <button onclick="editThought(${thoughtId || 0}, '${thought.replace(/'/g, "\\'")}, this)" title="Edit">✏️</button>
+            <select onchange="moveThought(${thoughtId || 0}, this.value, this)">
                 <option value="">Move to...</option>
                 <option value="goal">Goal</option>
                 <option value="analysis">Analysis</option>
                 <option value="plan">Plan</option>
                 <option value="status">Status</option>
             </select>
-            <button onclick="deleteThought(0, this)" title="Delete">🗑️</button>
+            <button onclick="deleteThought(${thoughtId || 0}, this)" title="Delete">🗑️</button>
         </div>
     `;
     

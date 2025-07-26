@@ -706,8 +706,12 @@ async function addSuggestedThought(thought, quadrant, button) {
         
         if (result.success) {
             // Update quadrants in background without refreshing page (to keep modal open)
+            // Pass the returned thought_id so delete buttons work properly
+            const thoughtId = result.thought && result.thought.id ? result.thought.id : null;
+            console.log('[DEBUG] Received thought_id from backend:', thoughtId);
+            
             if (typeof window.updateQuadrantInBackground === 'function') {
-                window.updateQuadrantInBackground(quadrant, thought);
+                window.updateQuadrantInBackground(quadrant, thought, thoughtId);
             } else if (typeof window.refreshQuadrants === 'function') {
                 // Fallback: only refresh if background update not available
                 console.log('[DEBUG] Background update not available, using full refresh');
