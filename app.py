@@ -609,7 +609,7 @@ def interactive_gaps():
                         parsed_json = json.loads(json_part)
                         # If there's no conversational message after JSON, provide a default response
                         if not message_part.strip():
-                            message_part = "I've processed your input and updated the quadrants accordingly."
+                            message_part = "I'd suggest reviewing the categorizations above. Does that placement work for you?"
                     except Exception as e:
                         print(f"[DEBUG] Failed to parse JSON from AI reply: {e}", flush=True)
                         parsed_json = None

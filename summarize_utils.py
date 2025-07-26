@@ -25,9 +25,9 @@ def summarize_conversation(board_id, keep_last_n=6):
         "Focus on key issues, goals, and progress. Be concise.\n\n"
         f"{convo_text}"
     )
-    # Call OpenAI (assumes API key in env)
-    client = openai.OpenAI()
-    response = client.chat.completions.create(
+    # Use the global OpenAI client from openai_api.py
+    from openai_api import client
+    response = client.ChatCompletion.create(
         model="gpt-3.5-turbo",
         messages=[{"role": "system", "content": prompt}],
         temperature=0.2,
