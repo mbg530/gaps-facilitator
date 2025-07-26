@@ -101,18 +101,21 @@ function updateQuadrantInBackground(quadrant, thought, thoughtId = null) {
     // Create new thought element (matching template structure)
     const thoughtElement = document.createElement('li');
     thoughtElement.className = 'thought-item';
+    const safeThoughtId = thoughtId || 0;
+    const escapedThought = thought.replace(/'/g, "\\'");
+    
     thoughtElement.innerHTML = `
         <span class="thought-content">${thought}</span>
         <div class="thought-controls">
-            <button onclick="editThought(${thoughtId || 0}, '${thought.replace(/'/g, "\\'")}, this)" title="Edit">✏️</button>
-            <select onchange="moveThought(${thoughtId || 0}, this.value, this)">
+            <button onclick="editThought(${safeThoughtId}, '${escapedThought}', this)" title="Edit">✏️</button>
+            <select onchange="moveThought(${safeThoughtId}, this.value, this)">
                 <option value="">Move to...</option>
                 <option value="goal">Goal</option>
                 <option value="analysis">Analysis</option>
                 <option value="plan">Plan</option>
                 <option value="status">Status</option>
             </select>
-            <button onclick="deleteThought(${thoughtId || 0}, this)" title="Delete">🗑️</button>
+            <button onclick="deleteThought(${safeThoughtId}, this)" title="Delete">🗑️</button>
         </div>
     `;
     
