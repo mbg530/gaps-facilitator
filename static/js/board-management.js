@@ -319,16 +319,19 @@ function handleHelp(e) {
  * Import board data from file
  */
 async function importBoardData(file) {
-    const formData = new FormData();
-    formData.append('file', file);
-    
     try {
+        // Read the file content as text
+        const fileContent = await file.text();
+        // Parse the JSON content
+        const boardData = JSON.parse(fileContent);
+        
         const resp = await fetch('/import_board', {
             method: 'POST',
             headers: {
+                'Content-Type': 'application/json',
                 'X-CSRFToken': getCsrfToken()
             },
-            body: formData
+            body: JSON.stringify(boardData)
         });
         
         const result = await resp.json();

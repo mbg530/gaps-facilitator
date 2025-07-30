@@ -435,6 +435,8 @@
             const input = document.getElementById('thought-input');
             const interactiveInput = document.getElementById('interactive-gaps-input');
             let recognition, recognizing = false;
+            let conversationMode = false; // Track if we're in persistent conversation mode
+            let pendingAutoRestart = false; // Track if we should auto-restart after AI response
 
             if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
                 const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -445,20 +447,44 @@
 
                 let currentTarget = null;
 
+                // Function to update voice button appearance based on mode
+                function updateVoiceButtonAppearance() {
+                    if (interactiveVoiceBtn && currentTarget === interactiveVoiceBtn) {
+                        if (conversationMode) {
+                            // Conversation mode: different color and title
+                            interactiveVoiceBtn.style.backgroundColor = recognizing ? '#ff4444' : '#ff8800';
+                            interactiveVoiceBtn.title = recognizing ? 'Listening... (Conversation Mode - Click to stop)' : 'Conversation Mode Active (Click to stop)';
+                        } else {
+                            // Single-shot mode: normal appearance
+                            interactiveVoiceBtn.style.backgroundColor = recognizing ? '#ff4444' : '#28a745';
+                            interactiveVoiceBtn.title = recognizing ? 'Listening... Click to stop' : 'Voice input';
+                        }
+                    }
+                }
+
                 recognition.onstart = function () {
                     recognizing = true;
-                    if (currentTarget) {
-                        currentTarget.style.backgroundColor = '#ff4444';
-                        currentTarget.title = 'Listening... Click to stop';
-                    }
+                    updateVoiceButtonAppearance();
                 };
                 recognition.onend = function () {
                     recognizing = false;
-                    if (currentTarget) {
-                        currentTarget.style.backgroundColor = currentTarget === voiceBtn ? '#28a745' : '#28a745';
-                        currentTarget.title = 'Voice input';
+                    updateVoiceButtonAppearance();
+                    
+                    // Auto-restart in conversation mode after AI response
+                    if (conversationMode && currentTarget === interactiveVoiceBtn && pendingAutoRestart) {
+                        console.log('[VOICE] Auto-restarting recognition in conversation mode');
+                        pendingAutoRestart = false;
+                        setTimeout(() => {
+                            if (conversationMode && !recognizing) {
+                                recognition.start();
+                            }
+                        }, 1000); // Wait 1 second after AI response before listening again
                     }
-                    currentTarget = null;
+                    
+                    // Reset currentTarget only if not in conversation mode
+                    if (!conversationMode) {
+                        currentTarget = null;
+                    }
                 };
                 recognition.onerror = function (e) {
                     recognizing = false;
@@ -478,6 +504,22 @@
                         } else if (currentTarget === interactiveVoiceBtn && interactiveInput) {
                             interactiveInput.value = transcript;
                             interactiveInput.focus();
+                            
+                            // Auto-send for conversational voice interface
+                            if (transcript && typeof sendInteractiveMessage === 'function') {
+                                console.log('[VOICE] Auto-sending transcribed message:', transcript);
+                                
+                                // Set flag for auto-restart after AI response (if in conversation mode)
+                                if (conversationMode) {
+                                    pendingAutoRestart = true;
+                                    console.log('[VOICE] Conversation mode: will auto-restart after AI response');
+                                }
+                                
+                                // Small delay to allow UI to update
+                                setTimeout(() => {
+                                    sendInteractiveMessage();
+                                }, 100);
+                            }
                         } else if (currentTarget === quickVoiceBtn && quickThoughtInput) {
                             quickThoughtInput.value = transcript;
                             quickThoughtInput.focus();
@@ -497,14 +539,23 @@
                     });
                 }
 
-                // Interactive Mode voice button
+                // Interactive Mode voice button with conversation mode
                 if (interactiveVoiceBtn) {
                     interactiveVoiceBtn.addEventListener('click', function () {
                         if (recognizing) {
+                            // Stop current recognition and exit conversation mode
                             recognition.stop();
+                            conversationMode = false;
+                            pendingAutoRestart = false;
+                            updateVoiceButtonAppearance();
+                            console.log('[VOICE] Exiting conversation mode');
                         } else {
+                            // Start recognition and enter conversation mode
                             currentTarget = interactiveVoiceBtn;
+                            conversationMode = true;
                             recognition.start();
+                            updateVoiceButtonAppearance();
+                            console.log('[VOICE] Entering conversation mode');
                         }
                     });
                 }

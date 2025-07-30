@@ -539,22 +539,33 @@ def interactive_gaps():
         # Step 3: Build AI prompt based on rule-based result
         from app import build_conversational_prompt
         
-        if rule_based_suggestion:
-            # High confidence rule-based result - AI focuses on conversation only
-            enhanced_prompt = build_conversational_prompt(history_window + [{"role": "user", "content": user_input}], quadrants)
-            enhanced_prompt += f"\n\nNOTE: Rule-based system has already categorized this input as '{rule_based_suggestion['quadrant'].upper()}' with high confidence. Focus on providing conversational response and strategic advice. Do not re-categorize - the categorization is already handled."
-            prompt = enhanced_prompt
-        else:
-            # Low confidence or no rule result - AI handles both conversation and categorization
-            base_prompt = build_conversational_prompt(history_window + [{"role": "user", "content": user_input}], quadrants)
-            prompt = base_prompt
+        # Rule-based prompt modification disabled - LLM always handles both conversation and categorization
+        # if rule_based_suggestion:
+        #     # High confidence rule-based result - AI focuses on conversation only
+        #     enhanced_prompt = build_conversational_prompt(history_window + [{"role": "user", "content": user_input}], quadrants)
+        #     enhanced_prompt += f"\n\nNOTE: Rule-based system has already categorized this input as '{rule_based_suggestion['quadrant'].upper()}' with high confidence. Focus on providing conversational response and strategic advice. Do not re-categorize - the categorization is already handled."
+        #     prompt = enhanced_prompt
+        # else:
+        #     # Low confidence or no rule result - AI handles both conversation and categorization
+        base_prompt = build_conversational_prompt(history_window + [{"role": "user", "content": user_input}], quadrants)
+        prompt = base_prompt
         
         # DEBUG: Print the full prompt being sent to the AI
         print("=== AI PROMPT SENT (interactive_gaps) ===", flush=True)
         print(prompt, flush=True)
         print("[DEBUG] Quadrants being sent to LLM:", quadrants, flush=True)
+        print("[DEBUG] User input being processed:", repr(user_input), flush=True)
+        print("[DEBUG] AI Provider:", AI_PROVIDER, flush=True)
         print("=========================================")
+        
+        # Call the LLM and capture the raw response
         ai_result = conversational_facilitator(prompt, quadrants=quadrants)
+        
+        # DEBUG: Print the raw AI response
+        print("\n=== RAW AI RESPONSE ===", flush=True)
+        print("AI Result type:", type(ai_result), flush=True)
+        print("AI Result content:", repr(ai_result), flush=True)
+        print("========================\n", flush=True)
         # Always use the full reply_text (JSON + follow-up) if present
         if isinstance(ai_result, dict) and 'reply_text' in ai_result:
             reply_text = ai_result['reply_text']
@@ -623,24 +634,26 @@ def interactive_gaps():
         print(f"   📊 Extracted JSON: {suggestions}", flush=True)
         print(f"   💬 Clean Message: '{reply_text_clean}'", flush=True)
         
-        # === HYBRID INTEGRATION: Inject rule-based result if high confidence ===
-        if rule_based_suggestion:
-            # High confidence rule-based categorization - inject the result
-            debug_logger.log('hybrid_integration', 'Injecting rule-based suggestion', {
-                'suggestion': rule_based_suggestion['thought'][:100],
-                'quadrant': rule_based_suggestion['quadrant']
-            })
-            
-            # Create or enhance suggestions with rule-based result
-            if not suggestions:
-                suggestions = {'add_to_quadrant': [rule_based_suggestion]}
-            elif 'add_to_quadrant' not in suggestions:
-                suggestions['add_to_quadrant'] = [rule_based_suggestion]
-            else:
-                # Prepend rule-based suggestion to any AI suggestions
-                suggestions['add_to_quadrant'].insert(0, rule_based_suggestion)
-            
-            print(f"[DEBUG] Injected rule-based suggestion: {rule_based_suggestion}", flush=True)
+        # === HYBRID INTEGRATION: DISABLED ===
+        # Rule-based suggestion injection has been disabled to allow LLM full control
+        # over both conversational flow and categorization, matching prompt testing tool behavior
+        # if rule_based_suggestion:
+        #     # High confidence rule-based categorization - inject the result
+        #     debug_logger.log('hybrid_integration', 'Injecting rule-based suggestion', {
+        #         'suggestion': rule_based_suggestion['thought'][:100],
+        #         'quadrant': rule_based_suggestion['quadrant']
+        #     })
+        #     
+        #     # Create or enhance suggestions with rule-based result
+        #     if not suggestions:
+        #         suggestions = {'add_to_quadrant': [rule_based_suggestion]}
+        #     elif 'add_to_quadrant' not in suggestions:
+        #         suggestions['add_to_quadrant'] = [rule_based_suggestion]
+        #     else:
+        #         # Prepend rule-based suggestion to any AI suggestions
+        #         suggestions['add_to_quadrant'].insert(0, rule_based_suggestion)
+        #     
+        #     print(f"[DEBUG] Injected rule-based suggestion: {rule_based_suggestion}", flush=True)
         
         # Filter out meta-conversational suggestions and duplicates from JSON
         if suggestions and 'add_to_quadrant' in suggestions:
