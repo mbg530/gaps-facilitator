@@ -11,10 +11,53 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     
     <!-- Application Stylesheets -->
-    <link rel="stylesheet" href="/static/css/main.css">
+    <link rel="stylesheet" href="/static/css/main.css?v={{ app_version }}">
     
     <!-- Legacy Script (to be refactored) -->
-    <script src="/static/fix_removeAISuggestion.js"></script>
+    <script src="/static/fix_removeAISuggestion.js?v={{ app_version }}"></script>
+    
+    <!-- Version-aware storage management -->
+    <script>
+        // Check app version and clear storage if changed
+        (function() {
+            const currentVersion = '{{ app_version }}';
+            const storedVersion = localStorage.getItem('gaps-app-version');
+            
+            if (storedVersion && storedVersion !== currentVersion) {
+                console.log('[VERSION] App version changed from', storedVersion, 'to', currentVersion);
+                console.log('[VERSION] Clearing browser storage to prevent conflicts...');
+                
+                // Clear all GAPS-related localStorage
+                const keysToRemove = [];
+                for (let i = 0; i < localStorage.length; i++) {
+                    const key = localStorage.key(i);
+                    if (key && (key.startsWith('gaps-') || key.startsWith('interactive-gaps-'))) {
+                        keysToRemove.push(key);
+                    }
+                }
+                
+                keysToRemove.forEach(key => {
+                    localStorage.removeItem(key);
+                    console.log('[VERSION] Cleared localStorage key:', key);
+                });
+                
+                // Clear sessionStorage as well
+                sessionStorage.clear();
+                console.log('[VERSION] Cleared sessionStorage');
+                
+                // Show user-friendly notification
+                setTimeout(() => {
+                    if (window.showNotification) {
+                        showNotification('App updated! Storage cleared for optimal performance.', 'info');
+                    }
+                }, 1000);
+            }
+            
+            // Store current version
+            localStorage.setItem('gaps-app-version', currentVersion);
+            console.log('[VERSION] Current app version:', currentVersion);
+        })();
+    </script>
 </head>
 
 <body>
@@ -56,6 +99,9 @@
             </a>
             <a id="quick-add-thought-link" href="#" style="display:block;padding:0.7em 1em;text-decoration:none;color:#007bff;border-bottom:1px solid #eee;">
                 <i class="fa fa-plus" style="margin-right:0.5em;"></i>Quick Add Thought
+            </a>
+            <a id="reset-delete-confirmations-link" href="#" style="display:block;padding:0.7em 1em;text-decoration:none;color:#6c757d;border-bottom:1px solid #eee;">
+                <i class="fa fa-refresh" style="margin-right:0.5em;"></i>Reset Delete Confirmations
             </a>
             {% if current_user.is_authenticated and current_user.is_admin %}
             <a href="/admin/prompt_editor" id="prompt-editor-link" style="display:block;padding:0.7em 1em;text-decoration:none;color:#28a745;border-bottom:1px solid #eee;">
@@ -318,10 +364,11 @@
     </script>
 
     <!-- Application JavaScript Modules -->
-    <script src="/static/js/utils.js"></script>
-    <script src="/static/js/interactive-mode.js"></script>
-    <script src="/static/js/board-management.js"></script>
-    <script src="/static/js/thought-management.js"></script>
+    <script src="/static/js/custom-confirm.js?v={{ app_version }}"></script>
+    <script src="/static/js/utils.js?v={{ app_version }}"></script>
+    <script src="/static/js/interactive-mode.js?v={{ app_version }}"></script>
+    <script src="/static/js/board-management.js?v={{ app_version }}"></script>
+    <script src="/static/js/thought-management.js?v={{ app_version }}"></script>
 
     <!-- Export C.P.F. Handler -->
     <script>
@@ -350,6 +397,20 @@
                     .catch(() => {
                         alert('C.P.F. file not found on server.');
                     });
+            });
+        }
+
+        // Reset Delete Confirmations Handler
+        const resetDeleteConfirmationsLink = document.getElementById('reset-delete-confirmations-link');
+        if (resetDeleteConfirmationsLink) {
+            resetDeleteConfirmationsLink.addEventListener('click', function(e) {
+                e.preventDefault();
+                if (window.isDeleteConfirmationSkipped && window.isDeleteConfirmationSkipped()) {
+                    window.resetDeleteConfirmations();
+                    alert('Delete confirmations have been reset. You will now see confirmation dialogs when deleting items.');
+                } else {
+                    alert('Delete confirmations are already enabled.');
+                }
             });
         }
 

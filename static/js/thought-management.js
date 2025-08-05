@@ -195,7 +195,8 @@ function displayAIReply(reply) {
  * Delete a thought by ID
  */
 async function deleteThought(thoughtId, element) {
-    if (!confirm('Are you sure you want to delete this thought?')) {
+    const confirmed = await showConfirm('Are you sure you want to delete this thought?');
+    if (!confirmed) {
         return;
     }
 

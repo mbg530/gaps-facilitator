@@ -7,8 +7,33 @@ from flask_wtf import CSRFProtect
 import os
 import uuid
 import time
+import glob
 import google.generativeai as genai
 from flask import send_from_directory
+
+# Version detection based on file modification times
+def get_app_version():
+    """Generate app version based on modification time of key files"""
+    try:
+        # Key files that indicate app changes
+        files_to_check = [
+            'app.py',
+            'templates/index.html', 
+            'static/js/interactive-mode.js',
+            'prompts/prompts_modified.txt'
+        ]
+        
+        latest_mtime = 0
+        for file_path in files_to_check:
+            if os.path.exists(file_path):
+                file_mtime = os.path.getmtime(file_path)
+                latest_mtime = max(latest_mtime, file_mtime)
+        
+        # Return timestamp as version string
+        return str(int(latest_mtime))
+    except Exception as e:
+        # Fallback version if file checking fails
+        return str(int(time.time()))
 
 # ... other imports ...
 
@@ -92,6 +117,11 @@ def download_prompt_file(filename):
 
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'dev-secret-key')
+
+# Make app version available to all templates
+@app.context_processor
+def inject_app_version():
+    return {'app_version': get_app_version()}
 
 # Register knowledge base endpoint
 app.register_blueprint(kb_blueprint)

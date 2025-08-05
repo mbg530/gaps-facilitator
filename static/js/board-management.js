@@ -286,7 +286,7 @@ function handleImportData(e) {
 /**
  * Handle board deletion
  */
-function handleDeleteBoard(e) {
+async function handleDeleteBoard(e) {
     e.preventDefault();
     console.log('[MENU] Delete Board clicked');
     
@@ -295,7 +295,8 @@ function handleDeleteBoard(e) {
         return;
     }
     
-    if (confirm('Are you sure you want to delete this board? This action cannot be undone.')) {
+    const confirmed = await showConfirm('Are you sure you want to delete this board? This action cannot be undone.');
+    if (confirmed) {
         deleteBoardById(window.boardId);
     }
 }
