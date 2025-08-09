@@ -47,7 +47,7 @@ def load_and_fill_prompt(filename, **kwargs):
 import os
 SHOW_JSON_WARNING = os.environ.get('SHOW_JSON_WARNING', 'true').lower() == 'true'
 
-OPENAI_MODEL = os.environ.get("OPENAI_MODEL", "gpt-4-turbo")
+OPENAI_MODEL = os.environ.get("OPENAI_MODEL", "gpt-5-mini")
 
 def conversational_facilitator(prompt, conversation_history=None, quadrants=None):
     print("[OPENAI] conversational_facilitator called", flush=True)
@@ -80,7 +80,7 @@ def conversational_facilitator(prompt, conversation_history=None, quadrants=None
         messages.append({"role": "user", "content": quadrant_text})
     messages.append({"role": "user", "content": prompt})
     response = client.ChatCompletion.create(
-        model="gpt-3.5-turbo",
+        model=OPENAI_MODEL,
         messages=messages,
         temperature=0.7,
         max_tokens=1500
@@ -103,7 +103,7 @@ def classify_thought_with_openai(content):
 
     user_prompt = f"Input: {content}\nRespond with valid JSON only."
     response = client.ChatCompletion.create(
-        model="gpt-3.5-turbo",
+        model=OPENAI_MODEL,
         messages=[
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_prompt}
@@ -148,7 +148,7 @@ def suggest_solution_with_openai(problems, obstacles):
     )
 
     response = client.ChatCompletion.create(
-        model="gpt-3.5-turbo",
+        model=OPENAI_MODEL,
         messages=[
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": "Please provide your response as a JSON array only."}
@@ -191,7 +191,7 @@ def brainstorm_with_openai(topic):
     )
     user_prompt = f"'{topic}'"
     response = client.ChatCompletion.create(
-        model="gpt-3.5-turbo",
+        model=OPENAI_MODEL,
         messages=[
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_prompt}
@@ -217,7 +217,7 @@ def meeting_minutes_with_openai(summary):
     )
     user_prompt = f"Summary: '{summary}'\n\nMeeting Minutes:"
     response = client.ChatCompletion.create(
-        model="gpt-3.5-turbo",
+        model=OPENAI_MODEL,
         messages=[
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_prompt}
@@ -232,7 +232,7 @@ def rewrite_thought_with_openai(thought):
     system_prompt = "You are an assistant that rewrites thoughts to be clearer, more positive, or more actionable. Respond with 1-3 improved versions as a numbered or bulleted list."
     user_prompt = f"Rewrite the following thought to be clearer, more positive, or more actionable.\n\nThought: '{thought}'\n\nRewritten Thought:"
     response = client.ChatCompletion.create(
-        model="gpt-3.5-turbo",
+        model=OPENAI_MODEL,
         messages=[
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_prompt}
