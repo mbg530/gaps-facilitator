@@ -1,10 +1,13 @@
 import os
 import openai
-from dotenv import load_dotenv
 from flask import session
 
-# Load environment variables from .env file
-load_dotenv()
+# Load environment variables from .env file (optional)
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    print("[WARNING] python-dotenv not available, using system environment variables only")
 
 # Initialize OpenAI client with session-based API key support
 client = None

@@ -267,8 +267,8 @@
     </main>
 
     <!-- Interactive GAPS Modal -->
-    <div id="interactive-gaps-modal" style="display:none;position:fixed;z-index:3000;left:0;top:0;width:100vw;height:100vh;background:rgba(0,0,0,0.35);align-items:center;justify-content:center;">
-        <div id="interactive-gaps-modal-content" style="background:#fff;padding:2em 2em 1.5em 2em;border-radius:10px;box-shadow:0 8px 32px rgba(0,0,0,0.18);max-width:500px;width:95%;margin:auto;display:flex;flex-direction:column;gap:1em;">
+    <div id="interactive-gaps-modal" style="display:none;position:fixed;z-index:3000;left:0;top:0;width:100vw;height:100vh;background:rgba(0,0,0,0.1);">
+        <div id="interactive-gaps-modal-content" style="background:#fff;border-radius:0 10px 10px 0;box-shadow:2px 0 20px rgba(0,0,0,0.15);width:400px;height:100vh;display:flex;flex-direction:column;position:fixed;left:0;top:0;">
             <div style="display:flex;align-items:center;justify-content:space-between;gap:1em;">
                 <h3 style="margin:0 0 0.5em 0;">Interactive GAPS Facilitator</h3>
                 <div style="display:flex;align-items:center;gap:0.5em;">
@@ -283,10 +283,10 @@
                     <button id="interactive-gaps-minimize" title="Minimize" style="background:none;border:none;font-size:1.3em;cursor:pointer;color:#888;line-height:1;">&#8211;</button>
                 </div>
             </div>
-            <div id="interactive-gaps-chat" style="height:220px;overflow-y:auto;background:#f8fafc;border-radius:8px;padding:1em;margin-bottom:1em;font-size:1.05em;">
+            <div id="interactive-gaps-chat" style="flex:1;overflow-y:auto;background:#f8fafc;border-radius:8px;padding:1em;margin-bottom:1em;font-size:1.05em;min-height:300px;">
             </div>
             <div style="display:flex;gap:0.5em;align-items:center;">
-                <textarea id="interactive-gaps-input" placeholder="Type your response..." rows="4" style="flex:1;padding:0.7em 1em;border-radius:5px;border:1px solid #ccc;font-size:1em;resize:vertical;min-height:48px;max-height:180px;"></textarea>
+                <textarea id="interactive-gaps-input" placeholder="Type your response..." rows="3" style="flex:1;padding:0.7em 1em;border-radius:5px;border:1px solid #ccc;font-size:1em;resize:vertical;min-height:48px;max-height:120px;"></textarea>
                 <div style="display:flex;flex-direction:column;gap:0.5em;">
                     <button id="interactive-gaps-voice" class="voice-btn" title="Voice input" style="background:#28a745;color:#fff;border:none;padding:0.7em;border-radius:5px;font-size:1.2em;cursor:pointer;width:48px;height:48px;display:flex;align-items:center;justify-content:center;">🎤</button>
                     <button id="interactive-gaps-send" style="background:#007bff;color:#fff;border:none;padding:0.7em 1.2em;border-radius:5px;font-size:1em;cursor:pointer;">Send</button>
@@ -295,6 +295,30 @@
             <button id="interactive-gaps-close" style="background:#eee;color:#444;border:none;padding:0.5em 1em;border-radius:5px;font-size:0.9em;cursor:pointer;align-self:flex-end;">Close</button>
         </div>
     </div>
+    
+    <!-- Add padding to main content when Interactive Mode is active -->
+    <style>
+        .interactive-mode-active main {
+            margin-left: 420px;
+            transition: margin-left 0.3s ease;
+        }
+        
+        .interactive-mode-active .quadrant-grid {
+            max-width: calc(100vw - 440px);
+        }
+        
+        /* Responsive adjustments */
+        @media (max-width: 1024px) {
+            .interactive-mode-active main {
+                margin-left: 0;
+            }
+            
+            #interactive-gaps-modal-content {
+                width: 100vw !important;
+                border-radius: 0 !important;
+            }
+        }
+    </style>
     
     <!-- Interactive Mode Minimized Icon -->
     <div id="interactive-gaps-minimized-icon" style="display:none;position:fixed;bottom:20px;left:20px;z-index:4000;background:#007bff;color:white;width:60px;height:60px;border-radius:50%;cursor:pointer;box-shadow:0 4px 12px rgba(0,0,0,0.3);display:flex;align-items:center;justify-content:center;font-size:1.2em;transition:all 0.3s ease;" title="Restore Interactive Mode">

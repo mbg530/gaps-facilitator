@@ -158,14 +158,25 @@ function handleCreateBoard(e) {
     console.log('[MENU] Create Board clicked');
     
     const createBoardModal = document.getElementById('create-board-modal');
+    console.log('[DEBUG] Create board modal found:', !!createBoardModal);
+    
     if (createBoardModal) {
+        console.log('[DEBUG] Opening create board modal');
         createBoardModal.style.display = 'flex';
         
         // Clear the input field
         const newBoardNameInput = document.getElementById('new-board-name');
+        console.log('[DEBUG] Board name input found:', !!newBoardNameInput);
         if (newBoardNameInput) {
             newBoardNameInput.value = '';
             newBoardNameInput.focus();
+        }
+    } else {
+        console.error('[ERROR] Create board modal not found in DOM');
+        // Fallback: prompt for board name
+        const boardName = prompt('Enter board name:');
+        if (boardName && boardName.trim()) {
+            createNewBoard(boardName.trim());
         }
     }
 }
@@ -391,6 +402,9 @@ async function deleteBoardById(boardId) {
  * Create a new board
  */
 async function createNewBoard(boardName) {
+    console.log('[DEBUG] Creating new board:', boardName);
+    console.log('[DEBUG] About to find modal elements...');
+    
     const createBtn = document.getElementById('modal-create-board-btn');
     const createBoardModal = document.getElementById('create-board-modal');
     
@@ -399,39 +413,97 @@ async function createNewBoard(boardName) {
         createBtn.textContent = 'Creating...';
     }
 
+    console.log('[DEBUG] About to start try block...');
     try {
+        console.log('[DEBUG] Sending create board request to server');
+        console.log('[DEBUG] About to call getCsrfToken()...');
+        
+        let csrfToken;
+        try {
+            // Direct CSRF token extraction to bypass cache issues
+            const meta = document.querySelector('meta[name=csrf-token]');
+            csrfToken = meta ? meta.getAttribute('content') : '';
+            console.log('[DEBUG] Direct CSRF token extraction:', csrfToken ? 'SUCCESS' : 'FAILED');
+            console.log('[DEBUG] CSRF token length:', csrfToken.length);
+        } catch (error) {
+            console.error('[ERROR] Direct CSRF token extraction failed:', error);
+            csrfToken = '';
+        }
+        console.log('[DEBUG] Using CSRF token for request:', csrfToken || '(empty)');
+        
+        const requestData = { name: boardName };
+        console.log('[DEBUG] Request data:', requestData);
+        
         const resp = await fetch('/create_board', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
-                'X-CSRFToken': getCsrfToken()
+                'X-CSRFToken': csrfToken
             },
-            body: JSON.stringify({ name: boardName })
+            body: JSON.stringify(requestData)
         });
 
+        console.log('[DEBUG] Server response status:', resp.status);
+        console.log('[DEBUG] Server response ok:', resp.ok);
+        
+        if (!resp.ok) {
+            const errorText = await resp.text();
+            console.error('[ERROR] Server returned error:', resp.status, errorText);
+            console.error('[ERROR] Response headers:', [...resp.headers.entries()]);
+            console.error('[ERROR] Request details - URL:', '/create_board');
+            console.error('[ERROR] Request details - Method:', 'POST');
+            console.error('[ERROR] Request details - Headers:', {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': csrfToken
+            });
+            console.error('[ERROR] Request details - Body:', JSON.stringify(requestData));
+            throw new Error(`Server error: ${resp.status} - ${errorText}`);
+        }
+        
         const result = await resp.json();
+        console.log('[DEBUG] Server response data:', result);
 
         if (result.success) {
-            showNotification('Board created successfully!');
+            console.log('[DEBUG] Processing successful board creation...');
+            
+            try {
+                console.log('[DEBUG] Showing notification...');
+                showNotification('Board created successfully!');
+                console.log('[DEBUG] Notification shown');
+            } catch (error) {
+                console.error('[ERROR] Failed to show notification:', error);
+            }
             
             // Close modal
+            console.log('[DEBUG] Closing modal...');
             if (createBoardModal) {
                 createBoardModal.style.display = 'none';
+                console.log('[DEBUG] Modal closed');
+            } else {
+                console.log('[DEBUG] No modal to close');
             }
             
             // Set the new board as active
+            console.log('[DEBUG] Setting new board as active...');
             if (result.board_id) {
                 window.boardId = result.board_id;
                 // Save board ID to localStorage for persistence
                 localStorage.setItem('gaps-current-board-id', result.board_id);
                 console.log('[DEBUG] New board ID saved to localStorage:', result.board_id);
+            } else {
+                console.log('[ERROR] No board_id in result:', result);
             }
             
             // Switch to the new board immediately
+            console.log('[DEBUG] Preparing to redirect to new board...');
             setTimeout(() => {
-                window.location.href = '/facilitator?board_id=' + result.board_id;
+                const redirectUrl = '/facilitator?board_id=' + result.board_id;
+                console.log('[DEBUG] Redirecting to:', redirectUrl);
+                window.location.href = redirectUrl;
             }, 1000);
+            console.log('[DEBUG] Redirect scheduled for 1 second');
         } else {
+            console.log('[ERROR] Server returned success=false:', result);
             alert('Failed to create board: ' + (result.error || 'Unknown error'));
         }
     } catch (error) {
