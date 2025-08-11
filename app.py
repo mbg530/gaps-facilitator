@@ -180,7 +180,7 @@ import re
 def landing():
     return render_template('landing.html')
 
-@app.route('/api-key-setup', methods=['GET', 'POST'])
+@app.route('/api_key_setup', methods=['GET', 'POST'])
 def api_key_setup():
     """Handle OpenAI API key setup"""
     if request.method == 'POST':
@@ -329,7 +329,7 @@ def interactive_gaps():
         return jsonify({
             'error': 'OpenAI API key required',
             'message': 'Please enter your OpenAI API key in settings to use the AI facilitator.',
-            'redirect': '/api-key-setup'
+            'redirect': '/api_key_setup'
         }), 400
     
     try:
