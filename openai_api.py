@@ -47,10 +47,73 @@ def load_and_fill_prompt(filename, **kwargs):
 import os
 SHOW_JSON_WARNING = os.environ.get('SHOW_JSON_WARNING', 'true').lower() == 'true'
 
-OPENAI_MODEL = os.environ.get("OPENAI_MODEL", "gpt-5-mini")
+OPENAI_MODEL = os.environ.get("OPENAI_MODEL", "gpt-5-nano")
+
+# Cost tracking for different models (per 1K tokens)
+MODEL_COSTS = {
+    "gpt-5": {"input": 1.25, "output": 10.0},
+    "gpt-5-mini": {"input": 0.25, "output": 2.0},
+    "gpt-5-nano": {"input": 0.05, "output": 0.40},
+    "gpt-4-turbo": {"input": 0.01, "output": 0.03},
+    "gpt-3.5-turbo": {"input": 0.0015, "output": 0.002}
+}
+
+def calculate_cost(model, input_tokens, output_tokens):
+    """Calculate cost for API call based on token usage"""
+    if model not in MODEL_COSTS:
+        print(f"Warning: Unknown model {model} for cost calculation")
+        return 0.0
+    
+    costs = MODEL_COSTS[model]
+    input_cost = (input_tokens / 1000) * costs["input"]
+    output_cost = (output_tokens / 1000) * costs["output"]
+    total_cost = input_cost + output_cost
+    
+    print(f"💰 COST: {model} | In:{input_tokens}tok(${input_cost:.4f}) Out:{output_tokens}tok(${output_cost:.4f}) Total:${total_cost:.4f}")
+    
+    # Also log to dedicated cost tracking file
+    log_cost_to_file(model, input_tokens, output_tokens, input_cost, output_cost, total_cost)
+    
+    return total_cost
+
+def log_cost_to_file(model, input_tokens, output_tokens, input_cost, output_cost, total_cost):
+    """Log cost information to a dedicated file for easy tracking and comparison"""
+    import os
+    from datetime import datetime
+    
+    # Create costs directory if it doesn't exist
+    cost_dir = "costs"
+    if not os.path.exists(cost_dir):
+        os.makedirs(cost_dir)
+    
+    # Generate filename with current date
+    today = datetime.now().strftime("%Y-%m-%d")
+    cost_file = os.path.join(cost_dir, f"llm_costs_{today}.txt")
+    
+    # Format timestamp
+    timestamp = datetime.now().strftime("%H:%M:%S")
+    
+    # Create log entry
+    log_entry = f"{timestamp} | {model:<12} | In:{input_tokens:>5}tok(${input_cost:>7.4f}) | Out:{output_tokens:>4}tok(${output_cost:>7.4f}) | Total:${total_cost:>7.4f}\n"
+    
+    # Append to file (create header if new file)
+    try:
+        # Check if file exists to add header
+        file_exists = os.path.exists(cost_file)
+        
+        with open(cost_file, "a", encoding="utf-8") as f:
+            # Add header if this is a new file
+            if not file_exists:
+                f.write("=== LLM COST TRACKING ===\n")
+                f.write("Time     | Model        | Input Tokens (Cost)   | Output Tokens (Cost) | Total Cost\n")
+                f.write("-" * 85 + "\n")
+            
+            f.write(log_entry)
+    except Exception as e:
+        print(f"Warning: Could not write to cost file: {e}")
 
 def conversational_facilitator(prompt, conversation_history=None, quadrants=None):
-    print("[OPENAI] conversational_facilitator called", flush=True)
+    # Removed verbose logging to keep Flask log clean for cost tracking
     """
     Calls OpenAI with a conversational prompt and returns a structured dict:
     - {'action': 'ask_clarification', 'question': ...}
@@ -85,6 +148,13 @@ def conversational_facilitator(prompt, conversation_history=None, quadrants=None
         temperature=0.7,
         max_tokens=1500
     )
+    
+    # Track cost for this API call
+    if hasattr(response, 'usage'):
+        input_tokens = response.usage.prompt_tokens
+        output_tokens = response.usage.completion_tokens
+        calculate_cost(OPENAI_MODEL, input_tokens, output_tokens)
+    
     # TRUST THE LLM: Just like the prompt testing tool, let the LLM handle everything
     # No backend interference, no forced categorization, no JSON extraction
     reply = response.choices[0].message.content.strip()
@@ -111,6 +181,13 @@ def classify_thought_with_openai(content):
         temperature=0.2,
         max_tokens=300
     )
+    
+    # Track cost for this API call
+    if hasattr(response, 'usage'):
+        input_tokens = response.usage.prompt_tokens
+        output_tokens = response.usage.completion_tokens
+        calculate_cost(OPENAI_MODEL, input_tokens, output_tokens)
+    
     # Extract and parse the JSON from the response
     import json
     reply = response.choices[0].message.content
@@ -156,6 +233,13 @@ def suggest_solution_with_openai(problems, obstacles):
         temperature=0.3,
         max_tokens=512
     )
+    
+    # Track cost for this API call
+    if hasattr(response, 'usage'):
+        input_tokens = response.usage.prompt_tokens
+        output_tokens = response.usage.completion_tokens
+        calculate_cost(OPENAI_MODEL, input_tokens, output_tokens)
+    
     import json
     reply = response.choices[0].message.content
     try:

@@ -580,9 +580,7 @@ def interactive_gaps():
         base_prompt = build_conversational_prompt(history_window + [{"role": "user", "content": user_input}], quadrants)
         prompt = base_prompt
         
-        # DEBUG: Print the full prompt being sent to the AI
-        print("=== AI PROMPT SENT (interactive_gaps) ===", flush=True)
-        print(prompt, flush=True)
+        # Removed massive prompt logging to keep Flask log clean
         print("[DEBUG] Quadrants being sent to LLM:", quadrants, flush=True)
         print("[DEBUG] User input being processed:", repr(user_input), flush=True)
         print("[DEBUG] AI Provider:", AI_PROVIDER, flush=True)
