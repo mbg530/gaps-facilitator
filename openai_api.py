@@ -1,23 +1,74 @@
 import os
 import openai
 from dotenv import load_dotenv
+from flask import session
 
 # Load environment variables from .env file
 load_dotenv()
 
-# Initialize OpenAI client with error handling
+# Initialize OpenAI client with session-based API key support
 client = None
-OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
-if OPENAI_API_KEY:
+
+def get_api_key():
+    """Get API key from session first, then fallback to environment variable"""
     try:
-        openai.api_key = OPENAI_API_KEY
-        client = openai  # In 0.28, we use the module directly
-        print("OpenAI client initialized successfully")
+        # Check session first (user-provided key) - only if we're in a request context
+        from flask import has_request_context
+        if has_request_context() and 'openai_api_key' in session and session['openai_api_key']:
+            return session['openai_api_key']
+    except (RuntimeError, ImportError):
+        # Not in request context or session not available
+        pass
+    
+    # Fallback to environment variable (for admin/development)
+    return os.environ.get("OPENAI_API_KEY")
+
+def validate_api_key(api_key):
+    """Validate an OpenAI API key by making a simple test call"""
+    if not api_key or not api_key.startswith('sk-'):
+        return False, "Invalid API key format. OpenAI keys start with 'sk-'"
+    
+    try:
+        # Save current key
+        old_key = openai.api_key
+        
+        # Test the new key with a minimal request
+        openai.api_key = api_key
+        response = openai.Model.list()
+        
+        # Restore old key
+        openai.api_key = old_key
+        
+        return True, "API key is valid"
     except Exception as e:
-        print(f"Warning: Failed to initialize OpenAI client: {e}")
+        # Restore old key on error
+        if 'old_key' in locals():
+            openai.api_key = old_key
+        return False, f"API key validation failed: {str(e)}"
+
+def initialize_openai_client():
+    """Initialize OpenAI client with current API key"""
+    global client
+    api_key = get_api_key()
+    
+    if not api_key:
         client = None
+        return False, "No API key available"
+    
+    try:
+        openai.api_key = api_key
+        client = openai  # In 0.28, we use the module directly
+        return True, "OpenAI client initialized successfully"
+    except Exception as e:
+        client = None
+        return False, f"Failed to initialize OpenAI client: {e}"
+
+# Try to initialize with environment key (for development)
+initialized, message = initialize_openai_client()
+if initialized:
+    print(f"[OpenAI] {message}")
 else:
-    raise ValueError("OPENAI_API_KEY environment variable not set.")
+    print(f"[OpenAI] {message} - Will require user API key")
 
 # Helper to load prompt from file
 
@@ -120,6 +171,11 @@ def conversational_facilitator(prompt, conversation_history=None, quadrants=None
     - {'action': 'classify_and_add', 'thoughts': [{'content': ..., 'quadrant': ...}, ...]}
     """
     
+    # Check if API key is available
+    initialized, message = initialize_openai_client()
+    if not initialized:
+        return {'action': 'error', 'message': 'OpenAI API key required. Please enter your API key in settings.'}
+    
     # Removed hardcoded initial greeting logic - now always uses prompt file
     
     # Let AI handle all categorization - removed broken force categorization logic
@@ -169,6 +225,11 @@ def classify_thought_with_openai(content):
     Returns a dict: {"quadrant": ..., "thought": ...}
     Now also supports flagging thoughts that do not belong on the board.
     """
+    # Check if API key is available
+    initialized, message = initialize_openai_client()
+    if not initialized:
+        return {"error": "OpenAI API key required. Please enter your API key in settings."}
+    
     system_prompt = load_prompt('prompts/classify_thought.txt')
 
     user_prompt = f"Input: {content}\nRespond with valid JSON only."
@@ -214,15 +275,17 @@ def classify_thought_with_openai(content):
 # --- Suggest Solution ---
 def suggest_solution_with_openai(problems, obstacles):
     """
-    Given lists of problems and obstacles, ask OpenAI to suggest a solution.
-    Returns a dict with 'suggestions' or 'error'.
-    Now also supports flagging items that do not belong on the board.
+    Calls OpenAI GPT model to suggest solutions given problems and obstacles.
+    Returns a list of solution suggestions.
     """
-    system_prompt = load_and_fill_prompt(
-        'prompts/suggest_solution.txt',
-        PROBLEMS='; '.join(problems) if problems else 'None provided',
-        OBSTACLES='; '.join(obstacles) if obstacles else 'None provided'
-    )
+    # Check if API key is available
+    initialized, message = initialize_openai_client()
+    if not initialized:
+        return ["Error: OpenAI API key required. Please enter your API key in settings."]
+    
+    system_prompt = load_prompt('prompts/suggest_solutions.txt')
+    if not system_prompt:
+        system_prompt = "You are a helpful assistant that suggests solutions to problems."
 
     response = client.ChatCompletion.create(
         model=OPENAI_MODEL,

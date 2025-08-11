@@ -177,9 +177,73 @@ import re
 def landing():
     return render_template('landing.html')
 
+@app.route('/api-key-setup', methods=['GET', 'POST'])
+def api_key_setup():
+    """Handle OpenAI API key setup"""
+    if request.method == 'POST':
+        api_key = request.form.get('api_key', '').strip()
+        
+        if not api_key:
+            flash('Please enter an API key', 'error')
+            return render_template('api_key_setup.html')
+        
+        # Validate the API key
+        from openai_api import validate_api_key
+        is_valid, message = validate_api_key(api_key)
+        
+        if is_valid:
+            # Store in session
+            session['openai_api_key'] = api_key
+            flash('API key validated successfully!', 'success')
+            
+            # Redirect to where they were trying to go, or facilitator
+            next_url = request.args.get('next') or url_for('facilitator')
+            return redirect(next_url)
+        else:
+            flash(f'API key validation failed: {message}', 'error')
+            return render_template('api_key_setup.html')
+    
+    return render_template('api_key_setup.html')
+
+@app.route('/api/validate-key', methods=['POST'])
+@csrf.exempt
+def validate_api_key_endpoint():
+    """AJAX endpoint to validate API key"""
+    try:
+        data = request.get_json()
+        api_key = data.get('api_key', '').strip()
+        
+        if not api_key:
+            return jsonify({'valid': False, 'message': 'Please enter an API key'})
+        
+        from openai_api import validate_api_key
+        is_valid, message = validate_api_key(api_key)
+        
+        return jsonify({'valid': is_valid, 'message': message})
+    except Exception as e:
+        return jsonify({'valid': False, 'message': f'Validation error: {str(e)}'})
+
+@app.route('/clear-api-key', methods=['POST'])
+def clear_api_key():
+    """Clear the stored API key"""
+    session.pop('openai_api_key', None)
+    flash('API key cleared', 'info')
+    return redirect(url_for('api_key_setup'))
+
+def require_api_key():
+    """Check if user has provided an API key, redirect to setup if not"""
+    from openai_api import get_api_key
+    if not get_api_key():
+        return redirect(url_for('api_key_setup', next=request.url))
+    return None
+
 @app.route('/facilitator', methods=['GET', 'POST'])
 @login_required
 def facilitator():
+    # Check for API key first
+    api_key_check = require_api_key()
+    if api_key_check:
+        return api_key_check
     if request.method == 'POST':
         # Create new board (database only)
         print('POST /facilitator form:', request.form)
@@ -256,6 +320,15 @@ def interactive_gaps():
     """
     Route for interactive GAPS AI. Uses GAPS-Coach logic for structured, hybrid conversational output.
     """
+    # Check for API key first
+    from openai_api import get_api_key
+    if not get_api_key():
+        return jsonify({
+            'error': 'OpenAI API key required',
+            'message': 'Please enter your OpenAI API key in settings to use the AI facilitator.',
+            'redirect': '/api-key-setup'
+        }), 400
+    
     try:
         from models import ConversationTurn, db
         from flask_login import current_user
