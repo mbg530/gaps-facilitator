@@ -1,0 +1,875 @@
+/* GAPS Facilitator - Interactive Mode Module - Side-by-Side Layout */
+
+let interactiveGapsHistory = [];
+
+/**
+ * Get current quadrant thoughts for AI initialization
+ */
+function getCurrentQuadrantThoughts() {
+    const getQuadrantThoughts = (quadrantId) => {
+        const quadrant = document.getElementById(quadrantId + '-list');
+        if (!quadrant) return [];
+        
+        const thoughts = [];
+        const thoughtItems = quadrant.querySelectorAll('.thought-item .thought-content');
+        thoughtItems.forEach(item => {
+            const text = item.textContent.trim();
+            if (text) thoughts.push(text);
+        });
+        return thoughts;
+    };
+    
+    return {
+        status: getQuadrantThoughts('status'),
+        goal: getQuadrantThoughts('goal'),
+        analysis: getQuadrantThoughts('analysis'),
+        plan: getQuadrantThoughts('plan')
+    };
+}
+
+/**
+ * Initialize conversation with AI
+ */
+function initializeConversation(quadrants) {
+    const interactiveGapsChat = document.getElementById('interactive-gaps-chat');
+    const boardId = window.boardId || null;
+
+    if (!boardId) {
+        interactiveGapsChat.innerHTML = "<div style='color:#c00;'>No board selected. Please select a board first.</div>";
+        return;
+    }
+
+    console.log('[DEBUG] About to fetch /interactive_gaps', { board_id: boardId, user_input: "", quadrants: quadrants });
+
+    fetch('/interactive_gaps', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': getCsrfToken()
+        },
+        body: JSON.stringify({
+            board_id: boardId,
+            user_input: "",
+            quadrants: quadrants
+        })
+    })
+    .then(response => {
+        console.log('[DEBUG] Response status:', response.status);
+        if (!response.ok) {
+            return response.json().then(errorData => {
+                throw new Error(`Server error ${response.status}: ${errorData.error || errorData.message || 'Unknown error'}`);
+            });
+        }
+        return response.json();
+    })
+    .then(result => {
+        console.log('[DEBUG] Backend result:', result);
+        
+        if (result.reply) {
+            // Handle suggestions FIRST (show added items before AI response)
+            if (result.suggestions) {
+                console.log('[DEBUG] Processing suggestions:', result.suggestions);
+                addSuggestionsToQuadrants(result.suggestions);
+            }
+            
+            // Check for move commands in AI response (minimal implementation)
+            try {
+                detectAndExecuteSimpleMoves(result.reply);
+            } catch (error) {
+                console.error('[MOVE DEBUG] Error in move detection:', error);
+                // Fail silently - don't break the conversation
+            }
+            
+            // Then display AI message
+            displayAIMessage(result.reply);
+            interactiveGapsHistory.push({ role: 'assistant', content: result.reply });
+        } else if (result.error) {
+            interactiveGapsChat.innerHTML = `<div style='color:#c00;'>Error: ${result.error}</div>`;
+        } else {
+            interactiveGapsChat.innerHTML = "<div style='color:#c00;'>No response from AI.</div>";
+        }
+    })
+    .catch(err => {
+        console.error('[DEBUG] Error:', err);
+        interactiveGapsChat.innerHTML = `<div style='color:#c00;'>Error: ${err.message}</div>`;
+    });
+}
+
+/**
+ * Open Interactive Mode
+ */
+function openInteractiveMode() {
+    // Hide the toggle button and show the IM panel
+    document.getElementById('interactive-mode-toggle').style.display = 'none';
+    document.getElementById('im-panel').style.display = 'flex';
+    document.getElementById('im-minimize-icon').style.display = 'flex';
+    
+    // Reset conversation on open
+    resetConversation();
+    
+    // Initialize conversation
+    const quadrants = getCurrentQuadrantThoughts();
+    initializeConversation(quadrants);
+}
+
+/**
+ * Send user message to AI
+ */
+function sendInteractiveMessage() {
+    const input = document.getElementById('interactive-gaps-input');
+    const chat = document.getElementById('interactive-gaps-chat');
+    const userMessage = input.value.trim();
+    
+    if (!userMessage) return;
+    
+    // Add user message to chat
+    const userDiv = document.createElement('div');
+    userDiv.style.cssText = 'margin: 10px 0; padding: 10px; background: #e3f2fd; border-radius: 5px;';
+    userDiv.innerHTML = `<strong>You:</strong> ${userMessage}`;
+    chat.appendChild(userDiv);
+    
+    // Clear input
+    input.value = '';
+    
+    // Add to history
+    interactiveGapsHistory.push({ role: 'user', content: userMessage });
+    
+    // Send to server
+    fetch('/interactive_gaps', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': getCsrfToken()
+        },
+        body: JSON.stringify({
+            board_id: window.boardId,
+            user_input: userMessage,
+            quadrants: getCurrentQuadrantThoughts()
+        })
+    })
+    .then(response => response.json())
+    .then(result => {
+        if (result.reply) {
+            // Handle suggestions FIRST (show added items before AI response)
+            if (result.suggestions) {
+                console.log('[DEBUG] Processing suggestions:', result.suggestions);
+                addSuggestionsToQuadrants(result.suggestions);
+            }
+            
+            // Check for move commands in AI response (minimal implementation)
+            try {
+                detectAndExecuteSimpleMoves(result.reply);
+            } catch (error) {
+                console.error('[MOVE DEBUG] Error in move detection:', error);
+                // Fail silently - don't break the conversation
+            }
+            
+            // Then display AI message
+            displayAIMessage(result.reply);
+            interactiveGapsHistory.push({ role: 'assistant', content: result.reply });
+        }
+    })
+    .catch(err => {
+        console.error('Error:', err);
+        displayAIMessage('Error communicating with AI.');
+    });
+    
+    // Scroll to bottom
+    chat.scrollTop = chat.scrollHeight;
+}
+
+/**
+ * Display AI message in chat
+ */
+function displayAIMessage(message) {
+    const chat = document.getElementById('interactive-gaps-chat');
+    const aiDiv = document.createElement('div');
+    aiDiv.style.cssText = 'margin: 10px 0; padding: 10px; background: #f5f5f5; border-radius: 5px;';
+    aiDiv.innerHTML = `<strong>AI:</strong> ${message}`;
+    chat.appendChild(aiDiv);
+    chat.scrollTop = chat.scrollHeight;
+}
+
+/**
+ * Simple move detection - looks for "move X to Y" patterns in AI responses
+ */
+function detectAndExecuteSimpleMoves(aiResponse) {
+    console.log('[MOVE DEBUG] Checking AI response for move commands:', aiResponse);
+    
+    // Pattern 1: "move [item] to [quadrant]"
+    const movePattern1 = /move\s+["']([^"']+)["']\s+to\s+(goal|status|analysis|plan)/gi;
+    
+    // Pattern 2: "I've moved [item] to the [quadrant] quadrant" (common AI phrasing)
+    const movePattern2 = /I've\s+moved\s+["']([^"']+)["']\s+to\s+the\s+(goal|status|analysis|plan)\s+quadrant/gi;
+    
+    // Pattern 3: "I've moved [item] to [quadrant]" (shorter AI phrasing)
+    const movePattern3 = /I've\s+moved\s+["']([^"']+)["']\s+to\s+(goal|status|analysis|plan)/gi;
+    
+    // Pattern 4: "moved [item] to [quadrant]" (even shorter)
+    const movePattern4 = /moved\s+["']([^"']+)["']\s+to\s+(goal|status|analysis|plan)/gi;
+    
+    // Pattern 5: "I've suggested moving [item] to [quadrant]" (AI asking for permission)
+    const movePattern5 = /I've\s+suggested\s+moving\s+["']([^"']+)["']\s+to\s+the\s+(goal|status|analysis|plan)\s+quadrant/gi;
+    
+    const matches1 = [...aiResponse.matchAll(movePattern1)];
+    const matches2 = [...aiResponse.matchAll(movePattern2)];
+    const matches3 = [...aiResponse.matchAll(movePattern3)];
+    const matches4 = [...aiResponse.matchAll(movePattern4)];
+    const matches5 = [...aiResponse.matchAll(movePattern5)];
+    const matches = [...matches1, ...matches2, ...matches3, ...matches4, ...matches5];
+    
+    console.log('[MOVE DEBUG] Found move patterns:', matches.length);
+    
+    matches.forEach((match, index) => {
+        const [fullMatch, itemText, targetQuadrant] = match;
+        console.log(`[MOVE DEBUG] Match ${index + 1}:`, { fullMatch, itemText, targetQuadrant });
+        
+        // Find the thought ID for this item text
+        const thoughtId = findThoughtIdByText(itemText.trim());
+        
+        if (thoughtId) {
+            console.log(`[MOVE DEBUG] Found thought ID ${thoughtId} for "${itemText}"`);
+            console.log(`[MOVE DEBUG] Attempting to move to ${targetQuadrant}`);
+            
+            // Ensure target quadrant is lowercase (server expects lowercase)
+            const normalizedQuadrant = targetQuadrant.toLowerCase();
+            console.log(`[MOVE DEBUG] Normalized quadrant: ${normalizedQuadrant}`);
+            
+            // Use custom move function that doesn't reload the page
+            console.log(`[MOVE DEBUG] Calling moveThoughtWithoutReload(${thoughtId}, ${normalizedQuadrant})`);
+            moveThoughtWithoutReload(thoughtId, normalizedQuadrant);
+        } else {
+            console.log(`[MOVE DEBUG] Could not find thought ID for "${itemText}"`);
+        }
+    });
+}
+
+/**
+ * Helper function to find thought ID by matching text content
+ */
+function findThoughtIdByText(searchText) {
+    console.log('[MOVE DEBUG] Searching for thought with text:', searchText);
+    
+    // Search through all quadrants for matching thought text
+    const quadrants = ['goal', 'status', 'analysis', 'plan'];
+    
+    for (const quadrant of quadrants) {
+        const listId = `${quadrant}-list`;
+        const list = document.getElementById(listId);
+        
+        if (list) {
+            const thoughtItems = list.querySelectorAll('.thought-item');
+            console.log(`[MOVE DEBUG] Checking ${thoughtItems.length} items in ${quadrant} quadrant`);
+            
+            for (const item of thoughtItems) {
+                const thoughtContent = item.querySelector('.thought-content');
+                if (thoughtContent) {
+                    const itemText = thoughtContent.textContent.trim();
+                    console.log(`[MOVE DEBUG] Comparing "${itemText}" with "${searchText}"`);
+                    
+                    // Simple text matching (case-insensitive)
+                    if (itemText.toLowerCase() === searchText.toLowerCase()) {
+                        const thoughtId = item.getAttribute('data-thought-id');
+                        console.log(`[MOVE DEBUG] Found matching thought with ID: ${thoughtId}`);
+                        return thoughtId;
+                    }
+                }
+            }
+        }
+    }
+    
+    console.log('[MOVE DEBUG] No matching thought found');
+    return null;
+}
+
+/**
+ * Move thought without page reload (for Interactive Mode)
+ */
+async function moveThoughtWithoutReload(thoughtId, newQuadrant) {
+    try {
+        console.log(`[MOVE DEBUG] Starting move: thought ${thoughtId} to ${newQuadrant}`);
+        
+        const resp = await fetch('/move_thought', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': getCsrfToken()
+            },
+            body: JSON.stringify({ 
+                thought_id: thoughtId, 
+                quadrant: newQuadrant,
+                board_id: getCurrentBoardId()
+            })
+        });
+
+        const result = await resp.json();
+        console.log(`[MOVE DEBUG] Server response:`, result);
+
+        if (result.success) {
+            console.log(`[MOVE DEBUG] Move successful, updating UI without reload`);
+            
+            // Show success notification
+            showNotification(`Thought moved to ${newQuadrant}!`);
+            
+            // Update the UI by moving the DOM element
+            updateThoughtLocationInDOM(thoughtId, newQuadrant);
+            
+        } else {
+            console.error(`[MOVE DEBUG] Move failed:`, result.error);
+            showNotification('Failed to move thought: ' + (result.error || 'Unknown error'), true);
+        }
+    } catch (error) {
+        console.error('[MOVE DEBUG] Error in moveThoughtWithoutReload:', error);
+        showNotification('Error moving thought. Please try again.', true);
+    }
+}
+
+/**
+ * Update thought location in DOM without page reload
+ */
+function updateThoughtLocationInDOM(thoughtId, newQuadrant) {
+    console.log(`[MOVE DEBUG] Updating DOM: moving thought ${thoughtId} to ${newQuadrant}`);
+    
+    // Find the thought element
+    const thoughtElement = document.querySelector(`[data-thought-id="${thoughtId}"]`);
+    if (!thoughtElement) {
+        console.error(`[MOVE DEBUG] Could not find thought element with ID ${thoughtId}`);
+        return;
+    }
+    
+    // Find the target quadrant list
+    const targetList = document.getElementById(`${newQuadrant}-list`);
+    if (!targetList) {
+        console.error(`[MOVE DEBUG] Could not find target list for quadrant ${newQuadrant}`);
+        return;
+    }
+    
+    // Move the element to the new quadrant
+    targetList.appendChild(thoughtElement);
+    console.log(`[MOVE DEBUG] Successfully moved thought element to ${newQuadrant} quadrant`);
+}
+
+/**
+ * Simple move detection - looks for "move X to Y" patterns in AI responses
+ */
+function detectAndExecuteSimpleMoves(aiResponse) {
+    console.log('[MOVE DEBUG] Checking AI response for move commands:', aiResponse);
+    
+    // Pattern 1: "move [item] to [quadrant]"
+    const movePattern1 = /move\s+["']([^"']+)["']\s+to\s+(goal|status|analysis|plan)/gi;
+    
+    // Pattern 2: "I've moved [item] to the [quadrant] quadrant" (common AI phrasing)
+    const movePattern2 = /I've\s+moved\s+["']([^"']+)["']\s+to\s+the\s+(goal|status|analysis|plan)\s+quadrant/gi;
+    
+    // Pattern 3: "I've moved [item] to [quadrant]" (shorter AI phrasing)
+    const movePattern3 = /I've\s+moved\s+["']([^"']+)["']\s+to\s+(goal|status|analysis|plan)/gi;
+    
+    // Pattern 4: "moved [item] to [quadrant]" (even shorter)
+    const movePattern4 = /moved\s+["']([^"']+)["']\s+to\s+(goal|status|analysis|plan)/gi;
+    
+    // Pattern 5: "I've suggested moving [item] to [quadrant]" (AI asking for permission)
+    const movePattern5 = /I've\s+suggested\s+moving\s+["']([^"']+)["']\s+to\s+the\s+(goal|status|analysis|plan)\s+quadrant/gi;
+    
+    const matches1 = [...aiResponse.matchAll(movePattern1)];
+    const matches2 = [...aiResponse.matchAll(movePattern2)];
+    const matches3 = [...aiResponse.matchAll(movePattern3)];
+    const matches4 = [...aiResponse.matchAll(movePattern4)];
+    const matches5 = [...aiResponse.matchAll(movePattern5)];
+    const matches = [...matches1, ...matches2, ...matches3, ...matches4, ...matches5];
+    
+    console.log('[MOVE DEBUG] Found move patterns:', matches.length);
+    
+    matches.forEach((match, index) => {
+        const [fullMatch, itemText, targetQuadrant] = match;
+        console.log(`[MOVE DEBUG] Match ${index + 1}:`, { fullMatch, itemText, targetQuadrant });
+        
+        // Find the thought ID for this item text
+        const thoughtId = findThoughtIdByText(itemText.trim());
+        
+        if (thoughtId) {
+            console.log(`[MOVE DEBUG] Found thought ID ${thoughtId} for "${itemText}"`);
+            console.log(`[MOVE DEBUG] Attempting to move to ${targetQuadrant}`);
+            
+            // Ensure target quadrant is lowercase (server expects lowercase)
+            const normalizedQuadrant = targetQuadrant.toLowerCase();
+            console.log(`[MOVE DEBUG] Normalized quadrant: ${normalizedQuadrant}`);
+            
+            // Use custom move function that doesn't reload the page
+            console.log(`[MOVE DEBUG] Calling moveThoughtWithoutReload(${thoughtId}, ${normalizedQuadrant})`);
+            moveThoughtWithoutReload(thoughtId, normalizedQuadrant);
+        } else {
+            console.log(`[MOVE DEBUG] Could not find thought ID for "${itemText}"`);
+        }
+    });
+}
+
+/**
+ * Helper function to find thought ID by matching text content
+ */
+function findThoughtIdByText(searchText) {
+    console.log('[MOVE DEBUG] Searching for thought with text:', searchText);
+    
+    // Search through all quadrants for matching thought text
+    const quadrants = ['goal', 'status', 'analysis', 'plan'];
+    
+    for (const quadrant of quadrants) {
+        const listId = `${quadrant}-list`;
+        const list = document.getElementById(listId);
+        
+        if (list) {
+            const thoughtItems = list.querySelectorAll('.thought-item');
+            console.log(`[MOVE DEBUG] Checking ${thoughtItems.length} items in ${quadrant} quadrant`);
+            
+            for (const item of thoughtItems) {
+                const thoughtContent = item.querySelector('.thought-content');
+                if (thoughtContent) {
+                    const itemText = thoughtContent.textContent.trim();
+                    console.log(`[MOVE DEBUG] Comparing "${itemText}" with "${searchText}"`);
+                    
+                    // Simple text matching (case-insensitive)
+                    if (itemText.toLowerCase() === searchText.toLowerCase()) {
+                        const thoughtId = item.getAttribute('data-thought-id');
+                        console.log(`[MOVE DEBUG] Found matching thought with ID: ${thoughtId}`);
+                        return thoughtId;
+                    }
+                }
+            }
+        }
+    }
+    
+    console.log('[MOVE DEBUG] No matching thought found');
+    return null;
+}
+
+/**
+ * Move thought without page reload (for Interactive Mode)
+ */
+async function moveThoughtWithoutReload(thoughtId, newQuadrant) {
+    try {
+        console.log(`[MOVE DEBUG] Starting move: thought ${thoughtId} to ${newQuadrant}`);
+        
+        const resp = await fetch('/move_thought', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': getCsrfToken()
+            },
+            body: JSON.stringify({ 
+                thought_id: thoughtId, 
+                quadrant: newQuadrant,
+                board_id: getCurrentBoardId()
+            })
+        });
+
+        const result = await resp.json();
+        console.log(`[MOVE DEBUG] Server response:`, result);
+
+        if (result.success) {
+            console.log(`[MOVE DEBUG] Move successful, updating UI without reload`);
+            
+            // Show success notification
+            showNotification(`Thought moved to ${newQuadrant}!`);
+            
+            // Update the UI by moving the DOM element
+            updateThoughtLocationInDOM(thoughtId, newQuadrant);
+            
+        } else {
+            console.error(`[MOVE DEBUG] Move failed:`, result.error);
+            showNotification('Failed to move thought: ' + (result.error || 'Unknown error'), true);
+        }
+    } catch (error) {
+        console.error('[MOVE DEBUG] Error in moveThoughtWithoutReload:', error);
+        showNotification('Error moving thought. Please try again.', true);
+    }
+}
+
+/**
+ * Update thought location in DOM without page reload
+ */
+function updateThoughtLocationInDOM(thoughtId, newQuadrant) {
+    console.log(`[MOVE DEBUG] Updating DOM: moving thought ${thoughtId} to ${newQuadrant}`);
+    
+    // Find the thought element
+    const thoughtElement = document.querySelector(`[data-thought-id="${thoughtId}"]`);
+    if (!thoughtElement) {
+        console.error(`[MOVE DEBUG] Could not find thought element with ID ${thoughtId}`);
+        return;
+    }
+    
+    // Find the target quadrant list
+    const targetList = document.getElementById(`${newQuadrant}-list`);
+    if (!targetList) {
+        console.error(`[MOVE DEBUG] Could not find target list for quadrant ${newQuadrant}`);
+        return;
+    }
+    
+    // Move the element to the new quadrant
+    targetList.appendChild(thoughtElement);
+    console.log(`[MOVE DEBUG] Successfully moved thought element to ${newQuadrant} quadrant`);
+}
+
+/**
+ * Add AI suggestions to quadrants automatically
+ */
+function addSuggestionsToQuadrants(suggestions) {
+    console.log('[DEBUG] Adding suggestions to quadrants:', suggestions);
+    
+    if (!suggestions || typeof suggestions !== 'object') {
+        console.log('[DEBUG] No valid suggestions to add');
+        return;
+    }
+    
+    const chat = document.getElementById('interactive-gaps-chat');
+    let addedItems = [];
+    
+    // Handle the add_to_quadrant array format
+    if (suggestions.add_to_quadrant && Array.isArray(suggestions.add_to_quadrant)) {
+        console.log('[DEBUG] Processing add_to_quadrant array:', suggestions.add_to_quadrant);
+        
+        suggestions.add_to_quadrant.forEach(item => {
+            if (item && typeof item === 'object' && item.quadrant && item.thought) {
+                console.log(`[DEBUG] Adding "${item.thought}" to ${item.quadrant} quadrant`);
+                updateQuadrantInBackground(item.quadrant, item.thought.trim());
+                addedItems.push({ quadrant: item.quadrant, thought: item.thought.trim() });
+            } else {
+                console.log('[DEBUG] Invalid item structure:', item);
+            }
+        });
+    } else {
+        // Fallback: Handle separate quadrant properties (original format)
+        ['goal', 'status', 'analysis', 'plan'].forEach(quadrant => {
+            if (suggestions[quadrant] && Array.isArray(suggestions[quadrant])) {
+                suggestions[quadrant].forEach(thought => {
+                    if (thought && thought.trim()) {
+                        console.log(`[DEBUG] Adding "${thought}" to ${quadrant} quadrant`);
+                        updateQuadrantInBackground(quadrant, thought.trim());
+                        addedItems.push({ quadrant: quadrant, thought: thought.trim() });
+                    }
+                });
+            }
+        });
+    }
+    
+    // Display added items in chat (one per line)
+    if (addedItems.length > 0 && chat) {
+        const itemsDiv = document.createElement('div');
+        itemsDiv.style.cssText = 'margin: 10px 0; padding: 10px; background: #e8f5e8; border-radius: 5px; border-left: 4px solid #4caf50;';
+        
+        let itemsHtml = '<strong>Added to diagram:</strong><br>';
+        addedItems.forEach(item => {
+            const quadrantName = item.quadrant.charAt(0).toUpperCase() + item.quadrant.slice(1);
+            itemsHtml += `• <strong>${quadrantName}:</strong> ${item.thought}<br>`;
+        });
+        
+        itemsDiv.innerHTML = itemsHtml;
+        chat.appendChild(itemsDiv);
+        chat.scrollTop = chat.scrollHeight;
+    }
+    
+    console.log('[DEBUG] Finished adding suggestions to quadrants');
+}
+
+/**
+ * Reset conversation
+ */
+function resetConversation() {
+    console.log('[DEBUG] Resetting conversation');
+    
+    // Clear history
+    interactiveGapsHistory = [];
+    
+    // Clear chat display
+    const chat = document.getElementById('interactive-gaps-chat');
+    if (chat) {
+        chat.innerHTML = "<div style='color: #666; text-align: center; padding: 2rem;'>Conversation reset. Click to start a new conversation...</div>";
+    }
+    
+    // Clear any stored conversation data
+    const boardId = window.boardId || 'default';
+    localStorage.removeItem(`interactive-gaps-conversation-${boardId}`);
+    
+    console.log('[DEBUG] Conversation reset completed');
+}
+
+/**
+ * Initialize Interactive Mode functionality
+ */
+function initializeInteractiveMode() {
+    console.log('[DEBUG] Initializing Interactive Mode');
+    
+    // Find panel elements
+    const interactiveModePanel = document.getElementById('interactive-mode-panel');
+    const interactiveGapsLink = document.getElementById('interactive-gaps-link');
+    const closeInteractivePanel = document.getElementById('close-interactive-panel');
+    const sendMessageBtn = document.getElementById('send-interactive-message');
+    const interactiveGapsInput = document.getElementById('interactive-gaps-input');
+    const resetConversationBtn = document.getElementById('reset-conversation');
+    const resetConversationMainBtn = document.getElementById('reset-conversation-main');
+    const minimizeBtn = document.getElementById('interactive-gaps-minimize');
+    const minimizedIcon = document.getElementById('interactive-gaps-minimized-icon');
+    
+    console.log('[DEBUG] Elements found:', {
+        panel: !!interactiveModePanel,
+        link: !!interactiveGapsLink,
+        close: !!closeInteractivePanel,
+        send: !!sendMessageBtn,
+        input: !!interactiveGapsInput,
+        reset: !!resetConversationBtn,
+        resetMain: !!resetConversationMainBtn,
+        minimize: !!minimizeBtn,
+        minimizedIcon: !!minimizedIcon
+    });
+    
+    // Setup Interactive Mode link click handler
+    if (interactiveGapsLink) {
+        interactiveGapsLink.addEventListener('click', function(e) {
+            e.preventDefault();
+            console.log('[DEBUG] Interactive mode link clicked');
+            
+            if (!interactiveModePanel) {
+                console.error('[ERROR] Interactive Mode panel not found!');
+                return;
+            }
+            
+            // Check current panel state
+            const isPanelVisible = interactiveModePanel.style.display === 'flex' || 
+                                 window.getComputedStyle(interactiveModePanel).display === 'flex';
+            
+            console.log('[DEBUG] Panel visible:', isPanelVisible);
+            
+            if (isPanelVisible) {
+                // Panel is open - close it (minimize)
+                console.log('[DEBUG] Minimizing panel');
+                interactiveModePanel.style.display = 'none';
+            } else {
+                // Panel is closed - open it (restore)
+                console.log('[DEBUG] Restoring panel');
+                interactiveModePanel.style.display = 'flex';
+                
+                // Only initialize conversation if no existing conversation
+                if (interactiveGapsHistory.length === 0) {
+                    console.log('[DEBUG] No existing conversation - initializing fresh');
+                    
+                    // Clear chat display first
+                    const chat = document.getElementById('interactive-gaps-chat');
+                    if (chat) {
+                        chat.innerHTML = "<div style='color: #666; text-align: center; padding: 2rem;'>Starting conversation...</div>";
+                    }
+                    
+                    // Reset server-side conversation first, then initialize fresh
+                    fetch('/reset_conversation', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'X-CSRFToken': getCsrfToken()
+                        },
+                        body: JSON.stringify({
+                            board_id: window.boardId
+                        })
+                    })
+                    .then(response => response.json())
+                    .then(result => {
+                        console.log('[DEBUG] Server-side conversation reset completed');
+                        // Now initialize fresh conversation
+                        const quadrants = getCurrentQuadrantThoughts();
+                        initializeConversation(quadrants);
+                    })
+                    .catch(err => {
+                        console.error('[DEBUG] Error resetting server conversation:', err);
+                        // Still try to initialize even if reset failed
+                        const quadrants = getCurrentQuadrantThoughts();
+                        initializeConversation(quadrants);
+                    });
+                } else {
+                    console.log('[DEBUG] Existing conversation found - restoring previous state');
+                }
+            }
+        });
+    }
+    
+    // Setup close button
+    if (closeInteractivePanel) {
+        closeInteractivePanel.addEventListener('click', function(e) {
+            e.preventDefault();
+            console.log('[DEBUG] Close button clicked');
+            if (interactiveModePanel) {
+                interactiveModePanel.style.display = 'none';
+            }
+        });
+    }
+    
+    // Setup send message functionality
+    if (sendMessageBtn && interactiveGapsInput) {
+        sendMessageBtn.addEventListener('click', sendInteractiveMessage);
+        
+        interactiveGapsInput.addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                sendInteractiveMessage();
+            }
+        });
+    }
+    
+    // Setup reset conversation functionality for both buttons
+    if (resetConversationBtn) {
+        resetConversationBtn.addEventListener('click', function(e) {
+            e.preventDefault();
+            console.log('[DEBUG] Reset conversation button (modal) clicked');
+            resetConversation();
+        });
+    }
+    
+    if (resetConversationMainBtn) {
+        resetConversationMainBtn.addEventListener('click', function(e) {
+            e.preventDefault();
+            console.log('[DEBUG] Reset conversation button (main menu) clicked');
+            resetConversation();
+        });
+    }
+    
+    // Setup minimize button functionality
+    if (minimizeBtn) {
+        minimizeBtn.addEventListener('click', function(e) {
+            e.preventDefault();
+            console.log('[DEBUG] Minimize button clicked');
+            if (interactiveModePanel) {
+                interactiveModePanel.style.display = 'none';
+                if (minimizedIcon) {
+                    minimizedIcon.style.display = 'flex';
+                    console.log('[DEBUG] Showing minimized icon');
+                } else {
+                    console.error('[DEBUG] Minimized icon not found');
+                }
+            }
+        });
+    }
+    
+    // Setup minimized icon (restore) functionality
+    if (minimizedIcon) {
+        minimizedIcon.addEventListener('click', function(e) {
+            e.preventDefault();
+            console.log('[DEBUG] Minimized icon clicked - restoring panel');
+            if (interactiveModePanel) {
+                interactiveModePanel.style.display = 'flex';
+                minimizedIcon.style.display = 'none';
+                console.log('[DEBUG] Hiding minimized icon');
+            }
+        });
+    } else {
+        console.error('[DEBUG] Minimized icon element not found during initialization');
+    }
+}
+
+/**
+ * Delete detection - looks for "remove X", "delete X" patterns in AI responses
+ */
+function detectAndExecuteDeletes(aiResponse) {
+    console.log('[DELETE DEBUG] Checking AI response for delete commands:', aiResponse);
+    
+    // Pattern 1: "remove [item]" or "Remove [item]"
+    const deletePattern1 = /(?:remove|delete)\s+["']([^"']+)["']/gi;
+    
+    // Pattern 2: "Let's remove [item]" or "Let's delete [item]"
+    const deletePattern2 = /Let's\s+(?:remove|delete)\s+["']([^"']+)["']/gi;
+    
+    // Pattern 3: "I won't add [item]" or "I understand. I won't add [item]"
+    const deletePattern3 = /I\s+(?:won't|will\s+not)\s+add\s+["']([^"']+)["']/gi;
+    
+    // Pattern 4: "I'll remove [item]" or "I'll delete [item]"
+    const deletePattern4 = /I'll\s+(?:remove|delete)\s+["']([^"']+)["']/gi;
+    
+    // Pattern 5: "Take out [item]" or "Get rid of [item]"
+    const deletePattern5 = /(?:take\s+out|get\s+rid\s+of)\s+["']([^"']+)["']/gi;
+    
+    const matches1 = [...aiResponse.matchAll(deletePattern1)];
+    const matches2 = [...aiResponse.matchAll(deletePattern2)];
+    const matches3 = [...aiResponse.matchAll(deletePattern3)];
+    const matches4 = [...aiResponse.matchAll(deletePattern4)];
+    const matches5 = [...aiResponse.matchAll(deletePattern5)];
+    const matches = [...matches1, ...matches2, ...matches3, ...matches4, ...matches5];
+    
+    console.log('[DELETE DEBUG] Found delete patterns:', matches.length);
+    
+    matches.forEach((match, index) => {
+        const [fullMatch, itemText] = match;
+        console.log(`[DELETE DEBUG] Match ${index + 1}:`, { fullMatch, itemText });
+        
+        // Find the thought ID for this item text
+        const thoughtId = findThoughtIdByText(itemText.trim());
+        
+        if (thoughtId) {
+            console.log(`[DELETE DEBUG] Found thought ID ${thoughtId} for "${itemText}"`);
+            console.log(`[DELETE DEBUG] Attempting to delete`);
+            
+            // Use custom delete function that doesn't reload the page
+            console.log(`[DELETE DEBUG] Calling deleteThoughtWithoutReload(${thoughtId})`);
+            deleteThoughtWithoutReload(thoughtId);
+        } else {
+            console.log(`[DELETE DEBUG] Could not find thought ID for "${itemText}"`);
+        }
+    });
+}
+
+/**
+ * Delete thought without page reload (for Interactive Mode)
+ */
+async function deleteThoughtWithoutReload(thoughtId) {
+    try {
+        console.log(`[DELETE DEBUG] Starting delete: thought ${thoughtId}`);
+        
+        const resp = await fetch('/delete_thought', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': getCsrfToken()
+            },
+            body: JSON.stringify({ 
+                thought_id: thoughtId,
+                board_id: getCurrentBoardId()
+            })
+        });
+
+        const result = await resp.json();
+        console.log(`[DELETE DEBUG] Server response:`, result);
+
+        if (result.success) {
+            console.log(`[DELETE DEBUG] Delete successful, updating UI without reload`);
+            
+            // Show success notification
+            showNotification(`Thought deleted!`);
+            
+            // Update the UI by removing the DOM element
+            removeThoughtFromDOM(thoughtId);
+            
+        } else {
+            console.error(`[DELETE DEBUG] Delete failed:`, result.error);
+            showNotification('Failed to delete thought: ' + (result.error || 'Unknown error'), true);
+        }
+    } catch (error) {
+        console.error('[DELETE DEBUG] Error in deleteThoughtWithoutReload:', error);
+        showNotification('Error deleting thought. Please try again.', true);
+    }
+}
+
+/**
+ * Remove thought from DOM without page reload
+ */
+function removeThoughtFromDOM(thoughtId) {
+    console.log(`[DELETE DEBUG] Removing thought ${thoughtId} from DOM`);
+    
+    // Find the thought element
+    const thoughtElement = document.querySelector(`[data-thought-id="${thoughtId}"]`);
+    if (!thoughtElement) {
+        console.error(`[DELETE DEBUG] Could not find thought element with ID ${thoughtId}`);
+        return;
+    }
+    
+    // Remove the element from the DOM
+    thoughtElement.remove();
+    console.log(`[DELETE DEBUG] Successfully removed thought element from DOM`);
+}
+
+// Initialize when DOM is loaded
+document.addEventListener('DOMContentLoaded', function() {
+    console.log('[DEBUG] DOM loaded, initializing Interactive Mode');
+    initializeInteractiveMode();
+});

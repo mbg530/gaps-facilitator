@@ -1,0 +1,690 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GAPSWORK</title>
+    <meta name="csrf-token" content="{{ csrf_token() }}">
+    
+    <!-- External Libraries -->
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <!-- Application Stylesheets -->
+    <link rel="stylesheet" href="/static/css/main.css?v={{ app_version }}">
+    
+    <!-- Legacy Script (to be refactored) -->
+    <script src="/static/fix_removeAISuggestion.js?v={{ app_version }}"></script>
+    
+    <!-- Version-aware storage management -->
+    <script>
+        // Check app version and clear storage if changed
+        (function() {
+            const currentVersion = '{{ app_version }}';
+            const storedVersion = localStorage.getItem('gaps-app-version');
+            
+            if (storedVersion && storedVersion !== currentVersion) {
+                console.log('[VERSION] App version changed from', storedVersion, 'to', currentVersion);
+                console.log('[VERSION] Clearing browser storage to prevent conflicts...');
+                
+                // Clear all GAPS-related localStorage
+                const keysToRemove = [];
+                for (let i = 0; i < localStorage.length; i++) {
+                    const key = localStorage.key(i);
+                    if (key && (key.startsWith('gaps-') || key.startsWith('interactive-gaps-'))) {
+                        keysToRemove.push(key);
+                    }
+                }
+                
+                keysToRemove.forEach(key => {
+                    localStorage.removeItem(key);
+                    console.log('[VERSION] Cleared localStorage key:', key);
+                });
+                
+                // Clear sessionStorage as well
+                sessionStorage.clear();
+                console.log('[VERSION] Cleared sessionStorage');
+                
+                // Show user-friendly notification
+                setTimeout(() => {
+                    if (window.showNotification) {
+                        showNotification('App updated! Storage cleared for optimal performance.', 'info');
+                    }
+                }, 1000);
+            }
+            
+            // Store current version
+            localStorage.setItem('gaps-app-version', currentVersion);
+            console.log('[VERSION] Current app version:', currentVersion);
+        })();
+    </script>
+</head>
+
+<body>
+    <!-- Board Menu Container -->
+    <div id="board-menu-container" style="position: absolute; top: 16px; right: 24px; z-index: 10;">
+        <span id="board-menu-icon" style="font-size: 1.8em; cursor: pointer; user-select: none;" title="Board options">
+            <i class="fa fa-info-circle"></i>
+        </span>
+        <div id="board-menu-dropdown" style="display:none;position:absolute;right:0;top:100%;background:#fff;border:1px solid #ccc;border-radius:6px;box-shadow:0 2px 8px rgba(0,0,0,0.1);min-width:180px;z-index:2000;">
+            <a id="open-board" href="#" style="display:block;padding:0.7em 1em;text-decoration:none;color:#333;border-bottom:1px solid #eee;">
+                <i class="fa fa-folder-open" style="margin-right:0.5em;"></i>Open Board
+            </a>
+            <a id="create-board" href="#" style="display:block;padding:0.7em 1em;text-decoration:none;color:#333;border-bottom:1px solid #eee;">
+                <i class="fa fa-plus" style="margin-right:0.5em;"></i>Create Board
+            </a>
+            <a id="export-data" href="#" style="display:block;padding:0.7em 1em;text-decoration:none;color:#333;border-bottom:1px solid #eee;">
+                <i class="fa fa-download" style="margin-right:0.5em;"></i>Export Data
+            </a>
+            <a id="import-data" href="#" style="display:block;padding:0.7em 1em;text-decoration:none;color:#333;border-bottom:1px solid #eee;">
+                <i class="fa fa-upload" style="margin-right:0.5em;"></i>Import Data
+            </a>
+            <a id="delete-board" href="#" style="display:block;padding:0.7em 1em;text-decoration:none;color:#c00;border-bottom:1px solid #eee;">
+                <i class="fa fa-trash" style="margin-right:0.5em;"></i>Delete Board
+            </a>
+            <a id="reset-conversation-main" href="#" style="display:block;padding:0.7em 1em;text-decoration:none;color:#333;border-bottom:1px solid #eee;">
+                <i class="fa fa-refresh" style="margin-right:0.5em;"></i>Reset Conversation
+            </a>
+            <a href="/rule-tester" style="display:block;padding:0.7em 1em;text-decoration:none;color:#2196F3;border-bottom:1px solid #eee;">
+                <i class="fa fa-cogs" style="margin-right:0.5em;"></i>🧪 Rule Tester
+            </a>
+            <a href="/debug" style="display:block;padding:0.7em 1em;text-decoration:none;color:#17a2b8;border-bottom:1px solid #eee;">
+                <i class="fa fa-bug" style="margin-right:0.5em;"></i>🔍 Rule Tester Debug Console
+            </a>
+            <a id="help-link" href="#" style="display:block;padding:0.7em 1em;text-decoration:none;color:#333;">
+                <i class="fa fa-question-circle" style="margin-right:0.5em;"></i>Help
+            </a>
+            <a id="export-cpf-link" href="#" style="display:block;padding:0.7em 1em;text-decoration:none;color:#333;">
+                <i class="fa fa-file-text" style="margin-right:0.5em;"></i>Export C.P.F.
+            </a>
+            <a id="quick-add-thought-link" href="#" style="display:block;padding:0.7em 1em;text-decoration:none;color:#007bff;border-bottom:1px solid #eee;">
+                <i class="fa fa-plus" style="margin-right:0.5em;"></i>Quick Add Thought
+            </a>
+            <a id="reset-delete-confirmations-link" href="#" style="display:block;padding:0.7em 1em;text-decoration:none;color:#6c757d;border-bottom:1px solid #eee;">
+                <i class="fa fa-refresh" style="margin-right:0.5em;"></i>Reset Delete Confirmations
+            </a>
+            {% if current_user.is_authenticated and current_user.is_admin %}
+            <a href="/admin/prompt_editor" id="prompt-editor-link" style="display:block;padding:0.7em 1em;text-decoration:none;color:#28a745;border-bottom:1px solid #eee;">
+                <i class="fa fa-edit" style="margin-right:0.5em;"></i>Prompt Editor
+            </a>
+            <a href="/admin/prompt_debug" id="prompt-debug-link" style="display:block;padding:0.7em 1em;text-decoration:none;color:#28a745;border-bottom:1px solid #eee;">
+                <i class="fa fa-bug" style="margin-right:0.5em;"></i>Prompt Debug Console
+            </a>
+            {% endif %}
+            {% if current_user.is_authenticated %}
+            <a href="{{ url_for('logout') }}" id="logout-link" style="display:block;padding:0.7em 1em;text-decoration:none;color:#333;border-bottom:1px solid #eee;">
+                <i class="fa fa-sign-out" style="margin-right:0.5em;"></i>Logout
+            </a>
+            {% endif %}
+            <!-- Version Display -->
+            <div style="padding:0.5em 1em;color:#888;font-size:0.85em;text-align:center;border-top:1px solid #eee;background:#f8f9fa;">
+                Version: {{ version or 'Unknown' }}
+            </div>
+        </div>
+    </div>
+
+    <!-- Board Creation Modal -->
+    <div id="create-board-modal" style="display:none;position:fixed;z-index:2000;left:0;top:0;width:100vw;height:100vh;background:rgba(0,0,0,0.35);align-items:center;justify-content:center;">
+        <div style="background:#fff;padding:2em;border-radius:10px;box-shadow:0 8px 32px rgba(0,0,0,0.18);max-width:400px;width:90%;margin:auto;">
+            <h3 style="margin:0 0 1em 0;">Create New Board</h3>
+            <input id="new-board-name" type="text" placeholder="Board name" style="width:100%;padding:0.6em;border:1px solid #ccc;border-radius:5px;font-size:1em;margin-bottom:1em;">
+            <div style="display:flex;gap:0.5em;justify-content:flex-end;">
+                <button id="modal-create-board-btn" style="background:#007bff;color:#fff;padding:0.6em 1.2em;border:none;border-radius:5px;font-size:1em;cursor:pointer;">Create</button>
+                <button id="modal-cancel-board-btn" style="background:#eee;color:#444;padding:0.6em 1.2em;border:none;border-radius:5px;font-size:1em;cursor:pointer;">Cancel</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Open Board Modal -->
+    <div id="open-board-modal" style="display:none;position:fixed;z-index:2000;left:0;top:0;width:100vw;height:100vh;background:rgba(0,0,0,0.35);align-items:center;justify-content:center;">
+        <div style="background:#fff;padding:2em;border-radius:10px;box-shadow:0 8px 32px rgba(0,0,0,0.18);max-width:500px;width:90%;margin:auto;">
+            <h3 style="margin:0 0 1em 0;">Select Board</h3>
+            <div id="board-list" style="max-height:300px;overflow-y:auto;margin-bottom:1em;">
+                <!-- Board list will be populated here -->
+            </div>
+            <div style="display:flex;gap:0.5em;justify-content:flex-end;">
+                <button id="close-board-modal" style="background:#eee;color:#444;padding:0.6em 1.2em;border:none;border-radius:5px;font-size:1em;cursor:pointer;">Close</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Main Header -->
+    <header>
+        <h1>GAPS Facilitator</h1>
+        <p>Goal-Analysis-Plan-Status Framework for Problem Solving</p>
+        {% if board %}
+        <div style="text-align: center; margin: 0.3rem 0; padding: 0.3rem; font-size: 0.9rem; font-weight: 600; color: #007bff; background-color: #f8f9fa; border: 1px solid #dee2e6; border-radius: 3px; display: inline-block;">
+            📋 {{ board.title or board.name or 'Unnamed Board' }}
+        </div>
+        {% else %}
+        <div style="text-align: center; margin: 0.3rem 0; padding: 0.3rem; font-size: 0.9rem; font-weight: 600; color: #6c757d; background-color: #f8f9fa; border: 1px solid #dee2e6; border-radius: 3px; display: inline-block;">
+            📋 No Board Selected
+        </div>
+        {% endif %}
+    </header>
+
+    <!-- Main Content -->
+    <main>
+        <!-- Side-by-side Layout Container -->
+        <div style="display: flex; gap: 2rem; min-height: 600px;">
+            
+            <!-- Left Side: Interactive Mode Panel -->
+            <div style="flex: 0 0 400px; display: flex; flex-direction: column; position: sticky; top: 12px; align-self: flex-start; height: calc(100vh - 160px);">
+                <!-- Interactive Mode Header -->
+                <div style="text-align:center;margin-bottom:1rem;">
+                    <a id="interactive-gaps-link" href="#" style="background:#007bff;color:#fff;padding:0.8rem 1.5rem;border-radius:8px;text-decoration:none;font-weight:600;display:inline-block;">
+                        <i class="fa fa-comments" style="margin-right:0.5rem;"></i>Interactive Mode
+                    </a>
+                </div>
+                
+                <!-- Interactive Mode Content Area -->
+                <div id="interactive-mode-panel" style="flex: 1; background: #f8fafc; border-radius: 10px; padding: 1rem; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04); display: none; flex-direction: column; height: 100%;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; padding-bottom: 0.5rem; border-bottom: 1px solid #e0e6ee;">
+                        <h3 style="margin: 0; color: #007bff;">Interactive Mode</h3>
+                        <button id="close-interactive-panel" style="background: none; border: none; color: #888; font-size: 1.2rem; cursor: pointer;" title="Close">×</button>
+                    </div>
+                    
+                    <!-- Chat Area -->
+                    <div id="interactive-gaps-chat" style="flex: 1; background: #fff; border-radius: 6px; padding: 1rem; margin-bottom: 1rem; overflow-y: auto; min-height: 200px; border: 1px solid #e0e6ee; scroll-behavior: smooth;">
+                        <div style="color: #666; text-align: center; padding: 2rem;">
+                            Click "Start Conversation" to begin...
+                        </div>
+                    </div>
+                    
+                    <!-- Input Area -->
+                    <div style="display: flex; gap: 0.5rem;">
+                        <textarea id="interactive-gaps-input" placeholder="Type your message..." rows="4" style="flex: 1; padding: 0.75rem; border: 1px solid #ccc; border-radius: 5px; font-size: 1rem; resize: vertical; min-height: 80px; max-height: 200px; font-family: inherit;"></textarea>
+                        <button id="send-interactive-message" style="background: #007bff; color: #fff; border: none; padding: 0.75rem 1rem; border-radius: 5px; cursor: pointer;">
+                            <i class="fa fa-paper-plane"></i>
+                        </button>
+                        <button id="interactive-voice-btn" style="background: none; border: 1px solid #007bff; color: #007bff; padding: 0.75rem; border-radius: 5px; cursor: pointer;" title="Voice input">
+                            <i class="fa fa-microphone"></i>
+                        </button>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Right Side: Quadrants Grid -->
+            <div style="flex: 1; display: flex; flex-direction: column;">
+                <div class="quadrants">
+            <!-- Status Quadrant -->
+            <div class="quadrant" ondragover="allowDrop(event)" ondragenter="dragEnter(event)" ondragleave="dragLeave(event)" ondrop="dropThought(event, 'status')">
+                <h2><i class="fa fa-info-circle"></i> Status</h2>
+                <ul id="status-list" class="thought-list">
+                    {% for thought in thoughts.status %}
+                        <li class="thought-item" draggable="true" ondragstart="dragThought(event, '{{ thought.id }}')" ondragend="clearTrashHighlight()" data-thought-id="{{ thought.id }}" data-quadrant="status">
+                            <span class="thought-content">{{ thought.content }}</span>
+                            <div class="thought-controls">
+                                <button onclick="editThought('{{ thought.id }}', '{{ thought.content|e }}', this)" title="Edit">✏️</button>
+                                <select onchange="moveThought('{{ thought.id }}', this.value, this)">
+                                    <option value="">Move to...</option>
+                                    <option value="goal">Goal</option>
+                                    <option value="analysis">Analysis</option>
+                                    <option value="plan">Plan</option>
+                                </select>
+                                <button onclick="deleteThought('{{ thought.id }}', this)" title="Delete">🗑️</button>
+                            </div>
+                        </li>
+                    {% endfor %}
+                </ul>
+            </div>
+
+            <!-- Goal Quadrant -->
+            <div class="quadrant" ondragover="allowDrop(event)" ondragenter="dragEnter(event)" ondragleave="dragLeave(event)" ondrop="dropThought(event, 'goal')">
+                <h2><i class="fa fa-bullseye"></i> Goal</h2>
+                <ul id="goal-list" class="thought-list">
+                    {% for thought in thoughts.goal %}
+                        <li class="thought-item" draggable="true" ondragstart="dragThought(event, '{{ thought.id }}')" ondragend="clearTrashHighlight()" data-thought-id="{{ thought.id }}" data-quadrant="goal">
+                            <span class="thought-content">{{ thought.content }}</span>
+                            <div class="thought-controls">
+                                <button onclick="editThought('{{ thought.id }}', '{{ thought.content|e }}', this)" title="Edit">✏️</button>
+                                <select onchange="moveThought('{{ thought.id }}', this.value, this)">
+                                    <option value="">Move to...</option>
+                                    <option value="status">Status</option>
+                                    <option value="analysis">Analysis</option>
+                                    <option value="plan">Plan</option>
+                                </select>
+                                <button onclick="deleteThought('{{ thought.id }}', this)" title="Delete">🗑️</button>
+                            </div>
+                        </li>
+                    {% endfor %}
+                </ul>
+            </div>
+
+            <!-- Analysis Quadrant -->
+            <div class="quadrant" ondragover="allowDrop(event)" ondragenter="dragEnter(event)" ondragleave="dragLeave(event)" ondrop="dropThought(event, 'analysis')">
+                <h2><i class="fa fa-search"></i> Analysis</h2>
+                <ul id="analysis-list" class="thought-list">
+                    {% for thought in thoughts.analysis %}
+                        <li class="thought-item" draggable="true" ondragstart="dragThought(event, '{{ thought.id }}')" ondragend="clearTrashHighlight()" data-thought-id="{{ thought.id }}" data-quadrant="analysis">
+                            <span class="thought-content">{{ thought.content }}</span>
+                            <div class="thought-controls">
+                                <button onclick="editThought('{{ thought.id }}', '{{ thought.content|e }}', this)" title="Edit">✏️</button>
+                                <select onchange="moveThought('{{ thought.id }}', this.value, this)">
+                                    <option value="">Move to...</option>
+                                    <option value="status">Status</option>
+                                    <option value="goal">Goal</option>
+                                    <option value="plan">Plan</option>
+                                </select>
+                                <button onclick="deleteThought('{{ thought.id }}', this)" title="Delete">🗑️</button>
+                            </div>
+                        </li>
+                    {% endfor %}
+                </ul>
+            </div>
+
+            <!-- Plan Quadrant -->
+            <div class="quadrant" ondragover="allowDrop(event)" ondragenter="dragEnter(event)" ondragleave="dragLeave(event)" ondrop="dropThought(event, 'plan')">
+                <h2><i class="fa fa-list"></i> Plan</h2>
+                <ul id="plan-list" class="thought-list">
+                    {% for thought in thoughts.plan %}
+                        <li class="thought-item" draggable="true" ondragstart="dragThought(event, '{{ thought.id }}')" ondragend="clearTrashHighlight()" data-thought-id="{{ thought.id }}" data-quadrant="plan">
+                            <span class="thought-content">{{ thought.content }}</span>
+                            <div class="thought-controls">
+                                <button onclick="editThought('{{ thought.id }}', '{{ thought.content|e }}', this)" title="Edit">✏️</button>
+                                <select onchange="moveThought('{{ thought.id }}', this.value, this)">
+                                    <option value="">Move to...</option>
+                                    <option value="status">Status</option>
+                                    <option value="goal">Goal</option>
+                                    <option value="analysis">Analysis</option>
+                                </select>
+                                <button onclick="deleteThought('{{ thought.id }}', this)" title="Delete">🗑️</button>
+                            </div>
+                        </li>
+                    {% endfor %}
+                </ul>
+            </div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- Interactive GAPS Modal -->
+    <div id="interactive-gaps-modal" style="display:none;position:fixed;z-index:3000;left:0;top:0;width:100vw;height:100vh;background:rgba(0,0,0,0.35);align-items:center;justify-content:center;">
+        <div id="interactive-gaps-modal-content" style="background:#fff;padding:2em 2em 1.5em 2em;border-radius:10px;box-shadow:0 8px 32px rgba(0,0,0,0.18);max-width:500px;width:95%;margin:auto;display:flex;flex-direction:column;gap:1em;">
+            <div style="display:flex;align-items:center;justify-content:space-between;gap:1em;">
+                <h3 style="margin:0 0 0.5em 0;">Interactive GAPS Facilitator</h3>
+                <div style="display:flex;align-items:center;gap:0.5em;">
+                    <!-- Info Dropdown -->
+                    <div style="position:relative;">
+                        <button id="interactive-gaps-info" title="Options" style="background:none;border:none;font-size:1.2em;cursor:pointer;color:#888;line-height:1;width:24px;height:24px;border-radius:50%;display:flex;align-items:center;justify-content:center;">i</button>
+                        <div id="interactive-gaps-info-dropdown" style="display:none;position:absolute;right:0;top:100%;background:#fff;border:1px solid #ccc;border-radius:6px;box-shadow:0 2px 8px rgba(0,0,0,0.1);min-width:160px;z-index:5000;">
+                            <a href="#" id="reset-conversation" style="display:block;padding:0.5em 1em;text-decoration:none;color:#333;border-bottom:1px solid #eee;">Reset Conversation</a>
+                        </div>
+                    </div>
+                    <!-- Minimize Button -->
+                    <button id="interactive-gaps-minimize" title="Minimize" style="background:none;border:none;font-size:1.3em;cursor:pointer;color:#888;line-height:1;">&#8211;</button>
+                </div>
+            </div>
+            <div id="interactive-gaps-chat" style="height:220px;overflow-y:auto;background:#f8fafc;border-radius:8px;padding:1em;margin-bottom:1em;font-size:1.05em;">
+            </div>
+            <div style="display:flex;gap:0.5em;align-items:center;">
+                <textarea id="interactive-gaps-input" placeholder="Type your response..." rows="4" style="flex:1;padding:0.7em 1em;border-radius:5px;border:1px solid #ccc;font-size:1em;resize:vertical;min-height:48px;max-height:180px;"></textarea>
+                <div style="display:flex;flex-direction:column;gap:0.5em;">
+                    <button id="interactive-gaps-voice" class="voice-btn" title="Voice input" style="background:#28a745;color:#fff;border:none;padding:0.7em;border-radius:5px;font-size:1.2em;cursor:pointer;width:48px;height:48px;display:flex;align-items:center;justify-content:center;">🎤</button>
+                    <button id="interactive-gaps-send" style="background:#007bff;color:#fff;border:none;padding:0.7em 1.2em;border-radius:5px;font-size:1em;cursor:pointer;">Send</button>
+                </div>
+            </div>
+            <button id="interactive-gaps-close" style="background:#eee;color:#444;border:none;padding:0.5em 1em;border-radius:5px;font-size:0.9em;cursor:pointer;align-self:flex-end;">Close</button>
+        </div>
+    </div>
+    
+    <!-- Interactive Mode Minimized Icon -->
+    <div id="interactive-gaps-minimized-icon" style="display:none;position:fixed;bottom:20px;left:20px;z-index:4000;background:#007bff;color:white;width:60px;height:60px;border-radius:50%;cursor:pointer;box-shadow:0 4px 12px rgba(0,0,0,0.3);align-items:center;justify-content:center;font-size:1.2em;transition:all 0.3s ease;" title="Restore Interactive Mode">
+        <i class="fas fa-comments"></i>
+    </div>
+
+    <!-- Help Overlay -->
+    <div id="help-overlay" style="display:none;position:fixed;left:0;top:0;width:100vw;height:100vh;background:rgba(0,0,0,0.35);z-index:3000;">
+        <div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);background:#fff;padding:2em;border-radius:10px;box-shadow:0 8px 32px rgba(0,0,0,0.18);max-width:600px;width:90%;max-height:80vh;overflow-y:auto;">
+            <h3 style="margin:0 0 1em 0;">GAPS Framework Help</h3>
+            <div id="gaps-kb-content">
+                <h4>What is GAPS?</h4>
+                <p>GAPS is a problem-solving framework that organizes thoughts into four quadrants:</p>
+                <ul>
+                    <li><strong>Status:</strong> Current situation, facts, observations</li>
+                    <li><strong>Goal:</strong> Desired outcomes, objectives, targets</li>
+                    <li><strong>Analysis:</strong> Root causes, insights, understanding</li>
+                    <li><strong>Plan:</strong> Actions, steps, solutions</li>
+                </ul>
+                <h4>How to Use</h4>
+                <p>1. Use Interactive Mode for guided problem-solving conversations</p>
+                <p>2. Your goal is to organize your thoughts into the appropriate columns in order to clarify your thinking on the issue or problem you're dealing with</p>
+                <p>3. Move thoughts between quadrants as your understanding evolves</p>
+                <p>4. Use the Quick Add Thought selection when you're making minor changes. Also, move or delete thoughts easily between quadrants as you need to.</p>
+            </div>
+            <button onclick="document.getElementById('help-overlay').style.display='none'" style="background:#007bff;color:#fff;border:none;padding:0.6em 1.2em;border-radius:5px;font-size:1em;cursor:pointer;margin-top:1em;">Close</button>
+        </div>
+    </div>
+
+    <!-- Notification -->
+    <div class="notification"></div>
+
+    <!-- Quick Add Thought Modal -->
+    <div id="quick-add-thought-modal" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);z-index:5000;">
+        <div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);background:white;padding:2rem;border-radius:10px;box-shadow:0 4px 20px rgba(0,0,0,0.3);max-width:500px;width:90%;">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1.5rem;">
+                <h3 style="margin:0;color:#333;">Quick Add Thought</h3>
+                <button id="quick-add-close" style="background:none;border:none;font-size:1.5rem;cursor:pointer;color:#666;">&times;</button>
+            </div>
+            <div style="margin-bottom:1rem;">
+                <input id="quick-thought-input" type="text" placeholder="What's on your mind?" style="width:100%;padding:0.8rem;border:1px solid #ddd;border-radius:5px;font-size:1rem;box-sizing:border-box;">
+            </div>
+            <div style="margin-bottom:1.5rem;">
+                <select id="quick-thought-quadrant" style="width:100%;padding:0.8rem;border:1px solid #ddd;border-radius:5px;font-size:1rem;box-sizing:border-box;">
+                    <option value="auto">Let GAPS decide</option>
+                    <option value="status">Status</option>
+                    <option value="goal">Goal</option>
+                    <option value="analysis">Analysis</option>
+                    <option value="plan">Plan</option>
+                </select>
+            </div>
+            <div style="display:flex;gap:1rem;">
+                <button id="quick-add-btn" style="flex:1;background:#007bff;color:white;border:none;padding:0.8rem;border-radius:5px;font-size:1rem;cursor:pointer;">Add Thought</button>
+                <button id="quick-voice-btn" class="voice-btn" title="Voice input" style="background:#28a745;color:white;border:none;padding:0.8rem;border-radius:5px;font-size:1.2rem;cursor:pointer;width:60px;">🎤</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Board Initialization Script -->
+    <script>
+    // Initialize board ID from Flask template
+    {% if board %}
+    window.boardId = "{{ board.id }}";
+    {% else %}
+    window.boardId = null;
+    {% endif %}
+    </script>
+
+    <!-- Application JavaScript Modules -->
+    <script src="/static/js/custom-confirm.js?v={{ app_version }}"></script>
+    <script src="/static/js/utils.js?v={{ app_version }}"></script>
+    <script src="/static/js/api.js?v={{ app_version }}"></script>
+    <script src="/static/js/interactive-mode.js?v={{ app_version }}"></script>
+    <script src="/static/js/board-management.js?v={{ app_version }}"></script>
+    <script src="/static/js/thought-management.js?v={{ app_version }}"></script>
+
+    <!-- Export C.P.F. Handler -->
+    <script>
+    document.addEventListener('DOMContentLoaded', function () {
+        var cpfMenuLink = document.getElementById('export-cpf-link');
+        if (cpfMenuLink) {
+            cpfMenuLink.addEventListener('click', function (e) {
+                e.preventDefault();
+                fetch('/prompts/prompts_modified.txt', {method: 'GET'})
+                    .then(response => {
+                        if (response.ok) {
+                            response.blob().then(blob => {
+                                const url = window.URL.createObjectURL(blob);
+                                const link = document.createElement('a');
+                                link.href = url;
+                                link.download = 'prompts_modified.txt';
+                                document.body.appendChild(link);
+                                link.click();
+                                document.body.removeChild(link);
+                                window.URL.revokeObjectURL(url);
+                            });
+                        } else {
+                            alert('C.P.F. file not found on server.');
+                        }
+                    })
+                    .catch(() => {
+                        alert('C.P.F. file not found on server.');
+                    });
+            });
+        }
+
+        // Reset Delete Confirmations Handler
+        const resetDeleteConfirmationsLink = document.getElementById('reset-delete-confirmations-link');
+        if (resetDeleteConfirmationsLink) {
+            resetDeleteConfirmationsLink.addEventListener('click', function(e) {
+                e.preventDefault();
+                if (window.isDeleteConfirmationSkipped && window.isDeleteConfirmationSkipped()) {
+                    window.resetDeleteConfirmations();
+                    alert('Delete confirmations have been reset. You will now see confirmation dialogs when deleting items.');
+                } else {
+                    alert('Delete confirmations are already enabled.');
+                }
+            });
+        }
+
+        // Quick Add Thought Modal Functionality
+        const quickAddModal = document.getElementById('quick-add-thought-modal');
+        const quickAddLink = document.getElementById('quick-add-thought-link');
+        const quickAddClose = document.getElementById('quick-add-close');
+        const quickAddBtn = document.getElementById('quick-add-btn');
+        const quickThoughtInput = document.getElementById('quick-thought-input');
+        const quickThoughtQuadrant = document.getElementById('quick-thought-quadrant');
+
+        // Open Quick Add Modal
+        if (quickAddLink) {
+            quickAddLink.addEventListener('click', function(e) {
+                e.preventDefault();
+                quickAddModal.style.display = 'block';
+                quickThoughtInput.focus();
+            });
+        }
+
+        // Close Quick Add Modal
+        function closeQuickAddModal() {
+            quickAddModal.style.display = 'none';
+            quickThoughtInput.value = '';
+            quickThoughtQuadrant.value = 'auto';
+        }
+
+        if (quickAddClose) {
+            quickAddClose.addEventListener('click', closeQuickAddModal);
+        }
+
+        // Close modal when clicking outside
+        if (quickAddModal) {
+            quickAddModal.addEventListener('click', function(e) {
+                if (e.target === quickAddModal) {
+                    closeQuickAddModal();
+                }
+            });
+        }
+
+        // Handle Quick Add Thought submission
+        if (quickAddBtn) {
+            quickAddBtn.addEventListener('click', function() {
+                const thoughtText = quickThoughtInput.value.trim();
+                const quadrant = quickThoughtQuadrant.value;
+                
+                if (thoughtText) {
+                    // Use the existing addThought function from thought-management.js
+                    if (typeof addThought === 'function') {
+                        addThought(thoughtText, quadrant);
+                        closeQuickAddModal();
+                    } else {
+                        // Fallback: trigger the main add button
+                        const mainInput = document.getElementById('new-thought-input');
+                        const mainQuadrant = document.getElementById('new-thought-quadrant');
+                        const mainAddBtn = document.getElementById('add-thought-btn');
+                        
+                        if (mainInput && mainQuadrant && mainAddBtn) {
+                            mainInput.value = thoughtText;
+                            mainQuadrant.value = quadrant;
+                            mainAddBtn.click();
+                            closeQuickAddModal();
+                        }
+                    }
+                }
+            });
+        }
+
+        // Handle Enter key in quick add input
+        if (quickThoughtInput) {
+            quickThoughtInput.addEventListener('keypress', function(e) {
+                if (e.key === 'Enter') {
+                    quickAddBtn.click();
+                }
+            });
+        }
+
+        // Voice Recognition Functionality
+        (function() {
+            const voiceBtn = document.getElementById('voice-btn');
+            const interactiveVoiceBtn = document.getElementById('interactive-gaps-voice');
+            const quickVoiceBtn = document.getElementById('quick-voice-btn');
+            const input = document.getElementById('thought-input');
+            const interactiveInput = document.getElementById('interactive-gaps-input');
+            let recognition, recognizing = false;
+            let conversationMode = false; // Track if we're in persistent conversation mode
+            let pendingAutoRestart = false; // Track if we should auto-restart after AI response
+
+            if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
+                const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+                recognition = new SpeechRecognition();
+                recognition.lang = 'en-US';
+                recognition.interimResults = false;
+                recognition.maxAlternatives = 1;
+
+                let currentTarget = null;
+
+                // Function to update voice button appearance based on mode
+                function updateVoiceButtonAppearance() {
+                    if (interactiveVoiceBtn && currentTarget === interactiveVoiceBtn) {
+                        if (conversationMode) {
+                            // Conversation mode: different color and title
+                            interactiveVoiceBtn.style.backgroundColor = recognizing ? '#ff4444' : '#ff8800';
+                            interactiveVoiceBtn.title = recognizing ? 'Listening... (Conversation Mode - Click to stop)' : 'Conversation Mode Active (Click to stop)';
+                        } else {
+                            // Single-shot mode: normal appearance
+                            interactiveVoiceBtn.style.backgroundColor = recognizing ? '#ff4444' : '#28a745';
+                            interactiveVoiceBtn.title = recognizing ? 'Listening... Click to stop' : 'Voice input';
+                        }
+                    }
+                }
+
+                recognition.onstart = function () {
+                    recognizing = true;
+                    updateVoiceButtonAppearance();
+                };
+                recognition.onend = function () {
+                    recognizing = false;
+                    updateVoiceButtonAppearance();
+                    
+                    // Auto-restart in conversation mode after AI response
+                    if (conversationMode && currentTarget === interactiveVoiceBtn && pendingAutoRestart) {
+                        console.log('[VOICE] Auto-restarting recognition in conversation mode');
+                        pendingAutoRestart = false;
+                        setTimeout(() => {
+                            if (conversationMode && !recognizing) {
+                                recognition.start();
+                            }
+                        }, 1000); // Wait 1 second after AI response before listening again
+                    }
+                    
+                    // Reset currentTarget only if not in conversation mode
+                    if (!conversationMode) {
+                        currentTarget = null;
+                    }
+                };
+                recognition.onerror = function (e) {
+                    recognizing = false;
+                    if (currentTarget) {
+                        currentTarget.style.backgroundColor = currentTarget === voiceBtn ? '#28a745' : '#28a745';
+                        currentTarget.title = 'Voice input';
+                    }
+                    currentTarget = null;
+                    alert('Speech recognition error: ' + e.error);
+                };
+                recognition.onresult = function (e) {
+                    if (e.results && e.results[0] && e.results[0][0]) {
+                        let transcript = e.results[0][0].transcript.trim();
+                        if (currentTarget === voiceBtn && input) {
+                            input.value = transcript;
+                            input.focus();
+                        } else if (currentTarget === interactiveVoiceBtn && interactiveInput) {
+                            interactiveInput.value = transcript;
+                            interactiveInput.focus();
+                            
+                            // Auto-send for conversational voice interface
+                            if (transcript && typeof sendInteractiveMessage === 'function') {
+                                console.log('[VOICE] Auto-sending transcribed message:', transcript);
+                                
+                                // Set flag for auto-restart after AI response (if in conversation mode)
+                                if (conversationMode) {
+                                    pendingAutoRestart = true;
+                                    console.log('[VOICE] Conversation mode: will auto-restart after AI response');
+                                }
+                                
+                                // Small delay to allow UI to update
+                                setTimeout(() => {
+                                    sendInteractiveMessage();
+                                }, 100);
+                            }
+                        } else if (currentTarget === quickVoiceBtn && quickThoughtInput) {
+                            quickThoughtInput.value = transcript;
+                            quickThoughtInput.focus();
+                        }
+                    }
+                };
+
+                // Main voice button (bottom right widget)
+                if (voiceBtn) {
+                    voiceBtn.addEventListener('click', function () {
+                        if (recognizing) {
+                            recognition.stop();
+                        } else {
+                            currentTarget = voiceBtn;
+                            recognition.start();
+                        }
+                    });
+                }
+
+                // Interactive Mode voice button with conversation mode
+                if (interactiveVoiceBtn) {
+                    interactiveVoiceBtn.addEventListener('click', function () {
+                        if (recognizing) {
+                            // Stop current recognition and exit conversation mode
+                            recognition.stop();
+                            conversationMode = false;
+                            pendingAutoRestart = false;
+                            updateVoiceButtonAppearance();
+                            console.log('[VOICE] Exiting conversation mode');
+                        } else {
+                            // Start recognition and enter conversation mode
+                            currentTarget = interactiveVoiceBtn;
+                            conversationMode = true;
+                            recognition.start();
+                            updateVoiceButtonAppearance();
+                            console.log('[VOICE] Entering conversation mode');
+                        }
+                    });
+                }
+
+                // Quick Add modal voice button
+                if (quickVoiceBtn) {
+                    quickVoiceBtn.addEventListener('click', function () {
+                        if (recognizing) {
+                            recognition.stop();
+                        } else {
+                            currentTarget = quickVoiceBtn;
+                            recognition.start();
+                        }
+                    });
+                }
+            } else {
+                if (voiceBtn) {
+                    voiceBtn.disabled = true;
+                    voiceBtn.title = 'Speech recognition not supported in this browser.';
+                    voiceBtn.style.opacity = 0.3;
+                }
+                if (interactiveVoiceBtn) {
+                    interactiveVoiceBtn.disabled = true;
+                    interactiveVoiceBtn.title = 'Speech recognition not supported in this browser.';
+                    interactiveVoiceBtn.style.opacity = 0.3;
+                }
+                if (quickVoiceBtn) {
+                    quickVoiceBtn.disabled = true;
+                    quickVoiceBtn.title = 'Speech recognition not supported in this browser.';
+                    quickVoiceBtn.style.opacity = 0.3;
+                }
+            }
+        })();
+    });
+    </script>
+</body>
+</html>

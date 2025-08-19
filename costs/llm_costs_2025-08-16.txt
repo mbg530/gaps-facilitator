@@ -1,0 +1,4 @@
+=== LLM COST TRACKING ===
+Time     | Model        | Input Tokens (Cost)   | Output Tokens (Cost) | Total Cost
+-------------------------------------------------------------------------------------
+06:39:04 | gpt-4o       | In: 7658tok($ 0.0191) | Out:  52tok($ 0.0005) | Total:$ 0.0197

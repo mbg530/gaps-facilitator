@@ -1,0 +1,65 @@
+=== LLM COST TRACKING ===
+Time     | Model        | Input Tokens (Cost)   | Output Tokens (Cost) | Total Cost
+-------------------------------------------------------------------------------------
+08:35:54 | gpt-4-turbo  | In:10158tok($ 0.1016) | Out:  64tok($ 0.0019) | Total:$ 0.1035
+08:38:10 | gpt-4-turbo  | In:10261tok($ 0.1026) | Out: 115tok($ 0.0034) | Total:$ 0.1061
+08:38:28 | gpt-4-turbo  | In:10331tok($ 0.1033) | Out:  76tok($ 0.0023) | Total:$ 0.1056
+09:44:27 | gpt-4-turbo  | In: 7139tok($ 0.0714) | Out:  14tok($ 0.0004) | Total:$ 0.0718
+09:44:35 | gpt-4-turbo  | In: 7363tok($ 0.0736) | Out: 188tok($ 0.0056) | Total:$ 0.0793
+09:45:21 | gpt-4-turbo  | In: 7519tok($ 0.0752) | Out: 104tok($ 0.0031) | Total:$ 0.0783
+09:45:54 | gpt-4-turbo  | In: 7645tok($ 0.0765) | Out:  84tok($ 0.0025) | Total:$ 0.0790
+09:49:38 | gpt-4-turbo  | In: 7792tok($ 0.0779) | Out:  91tok($ 0.0027) | Total:$ 0.0806
+10:20:12 | gpt-4-turbo  | In: 7139tok($ 0.0714) | Out:  14tok($ 0.0004) | Total:$ 0.0718
+10:24:41 | gpt-4-turbo  | In: 7363tok($ 0.0736) | Out: 188tok($ 0.0056) | Total:$ 0.0793
+10:25:21 | gpt-4-turbo  | In: 7508tok($ 0.0751) | Out:  56tok($ 0.0017) | Total:$ 0.0768
+10:25:57 | gpt-4-turbo  | In: 7608tok($ 0.0761) | Out:  48tok($ 0.0014) | Total:$ 0.0775
+14:37:12 | gpt-4-turbo  | In: 7139tok($ 0.0714) | Out:  14tok($ 0.0004) | Total:$ 0.0718
+14:37:45 | gpt-4-turbo  | In: 7363tok($ 0.0736) | Out: 189tok($ 0.0057) | Total:$ 0.0793
+14:47:20 | gpt-4-turbo  | In: 7440tok($ 0.0744) | Out: 175tok($ 0.0052) | Total:$ 0.0797
+14:47:45 | gpt-4-turbo  | In: 7617tok($ 0.0762) | Out: 175tok($ 0.0052) | Total:$ 0.0814
+14:50:03 | gpt-4-turbo  | In: 7794tok($ 0.0779) | Out: 175tok($ 0.0052) | Total:$ 0.0832
+14:51:31 | gpt-4-turbo  | In: 7971tok($ 0.0797) | Out: 175tok($ 0.0052) | Total:$ 0.0850
+14:52:52 | gpt-4-turbo  | In: 8057tok($ 0.0806) | Out:  30tok($ 0.0009) | Total:$ 0.0815
+14:57:03 | gpt-4-turbo  | In: 7139tok($ 0.0714) | Out:  14tok($ 0.0004) | Total:$ 0.0718
+14:57:33 | gpt-4-turbo  | In: 7363tok($ 0.0736) | Out: 195tok($ 0.0059) | Total:$ 0.0795
+15:00:12 | gpt-4-turbo  | In: 7139tok($ 0.0714) | Out:  14tok($ 0.0004) | Total:$ 0.0718
+15:00:42 | gpt-4-turbo  | In: 7363tok($ 0.0736) | Out: 188tok($ 0.0056) | Total:$ 0.0793
+15:02:13 | gpt-4-turbo  | In: 7139tok($ 0.0714) | Out:  14tok($ 0.0004) | Total:$ 0.0718
+15:02:33 | gpt-4-turbo  | In: 7363tok($ 0.0736) | Out: 188tok($ 0.0056) | Total:$ 0.0793
+15:04:27 | gpt-4-turbo  | In: 7139tok($ 0.0714) | Out:  14tok($ 0.0004) | Total:$ 0.0718
+15:04:38 | gpt-4-turbo  | In: 7363tok($ 0.0736) | Out: 186tok($ 0.0056) | Total:$ 0.0792
+15:12:36 | gpt-4-turbo  | In: 7139tok($ 0.0714) | Out:  14tok($ 0.0004) | Total:$ 0.0718
+15:12:47 | gpt-4-turbo  | In: 7363tok($ 0.0736) | Out: 188tok($ 0.0056) | Total:$ 0.0793
+15:13:22 | gpt-4-turbo  | In: 7281tok($ 0.0728) | Out:  50tok($ 0.0015) | Total:$ 0.0743
+15:16:15 | gpt-4-turbo  | In: 7139tok($ 0.0714) | Out:  14tok($ 0.0004) | Total:$ 0.0718
+15:16:44 | gpt-4-turbo  | In: 7363tok($ 0.0736) | Out: 188tok($ 0.0056) | Total:$ 0.0793
+15:21:10 | gpt-4-turbo  | In: 7139tok($ 0.0714) | Out:  14tok($ 0.0004) | Total:$ 0.0718
+15:21:24 | gpt-4-turbo  | In: 7363tok($ 0.0736) | Out: 198tok($ 0.0059) | Total:$ 0.0796
+15:23:05 | gpt-4-turbo  | In: 7139tok($ 0.0714) | Out:  14tok($ 0.0004) | Total:$ 0.0718
+15:23:26 | gpt-4-turbo  | In: 7363tok($ 0.0736) | Out: 191tok($ 0.0057) | Total:$ 0.0794
+15:29:57 | gpt-4-turbo  | In: 7139tok($ 0.0714) | Out:  14tok($ 0.0004) | Total:$ 0.0718
+15:30:17 | gpt-4-turbo  | In: 7363tok($ 0.0736) | Out: 190tok($ 0.0057) | Total:$ 0.0793
+15:31:01 | gpt-4-turbo  | In: 7521tok($ 0.0752) | Out:  63tok($ 0.0019) | Total:$ 0.0771
+15:31:16 | gpt-4-turbo  | In: 7564tok($ 0.0756) | Out:  58tok($ 0.0017) | Total:$ 0.0774
+15:31:56 | gpt-4-turbo  | In: 7341tok($ 0.0734) | Out:  51tok($ 0.0015) | Total:$ 0.0749
+15:32:17 | gpt-4-turbo  | In: 7348tok($ 0.0735) | Out: 114tok($ 0.0034) | Total:$ 0.0769
+15:33:03 | gpt-4-turbo  | In: 7472tok($ 0.0747) | Out:  74tok($ 0.0022) | Total:$ 0.0769
+15:37:35 | gpt-4-turbo  | In: 7372tok($ 0.0737) | Out:  45tok($ 0.0013) | Total:$ 0.0751
+15:42:59 | gpt-4-turbo  | In: 7383tok($ 0.0738) | Out:  61tok($ 0.0018) | Total:$ 0.0757
+15:53:53 | gpt-4-turbo  | In: 7383tok($ 0.0738) | Out:  55tok($ 0.0016) | Total:$ 0.0755
+15:55:54 | gpt-4-turbo  | In: 7402tok($ 0.0740) | Out:  73tok($ 0.0022) | Total:$ 0.0762
+15:56:12 | gpt-4-turbo  | In: 7467tok($ 0.0747) | Out:  60tok($ 0.0018) | Total:$ 0.0765
+15:58:58 | gpt-4-turbo  | In: 7383tok($ 0.0738) | Out:  65tok($ 0.0019) | Total:$ 0.0758
+15:59:05 | gpt-4-turbo  | In: 7412tok($ 0.0741) | Out:  77tok($ 0.0023) | Total:$ 0.0764
+15:59:26 | gpt-4-turbo  | In: 7481tok($ 0.0748) | Out:  80tok($ 0.0024) | Total:$ 0.0772
+16:00:54 | gpt-4-turbo  | In: 7383tok($ 0.0738) | Out:  74tok($ 0.0022) | Total:$ 0.0761
+16:01:18 | gpt-4-turbo  | In: 7425tok($ 0.0742) | Out:  63tok($ 0.0019) | Total:$ 0.0761
+16:01:26 | gpt-4-turbo  | In: 7467tok($ 0.0747) | Out:  69tok($ 0.0021) | Total:$ 0.0767
+16:02:52 | gpt-4-turbo  | In: 7383tok($ 0.0738) | Out:  71tok($ 0.0021) | Total:$ 0.0760
+16:03:00 | gpt-4-turbo  | In: 7422tok($ 0.0742) | Out:  59tok($ 0.0018) | Total:$ 0.0760
+16:04:53 | gpt-4-turbo  | In: 7383tok($ 0.0738) | Out:  62tok($ 0.0019) | Total:$ 0.0757
+16:05:05 | gpt-4-turbo  | In: 7413tok($ 0.0741) | Out:  66tok($ 0.0020) | Total:$ 0.0761
+16:05:28 | gpt-4-turbo  | In: 7376tok($ 0.0738) | Out:  41tok($ 0.0012) | Total:$ 0.0750
+16:06:58 | gpt-4-turbo  | In: 7376tok($ 0.0738) | Out:  58tok($ 0.0017) | Total:$ 0.0755
+16:07:30 | gpt-4-turbo  | In: 7410tok($ 0.0741) | Out:  79tok($ 0.0024) | Total:$ 0.0765
+19:54:12 | gpt-4-turbo  | In: 7376tok($ 0.0738) | Out:  35tok($ 0.0011) | Total:$ 0.0748

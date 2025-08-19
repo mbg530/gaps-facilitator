@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GAPSWORK</title>
+    <style>
+        body { font-family: 'Segoe UI', Arial, sans-serif; background: #f7f9fb; margin: 0; padding: 0; }
+        .landing-container { max-width: 480px; margin: 8vh auto; background: #fff; border-radius: 12px; box-shadow: 0 4px 16px rgba(0,0,0,0.08); padding: 2.5rem 2rem; text-align: center; }
+        .landing-title { font-size: 2.1rem; color: #007bff; margin-bottom: 1.2rem; font-weight: 700; letter-spacing: 1px; }
+        .landing-question { font-size: 1.23rem; margin-bottom: 2.2rem; color: #333; }
+        .landing-btns { display: flex; gap: 1.2rem; justify-content: center; margin-bottom: 1.7rem; }
+        .landing-btn { background: #007bff; color: #fff; border: none; border-radius: 6px; font-size: 1.07rem; padding: 0.7rem 1.7rem; cursor: pointer; transition: background 0.2s; font-weight: 500; }
+        .landing-btn:hover { background: #005bbf; }
+        .intro-box { background: #f1f7ff; border: 1.5px solid #007bff; border-radius: 10px; padding: 1.5rem 1.2rem; margin-top: 1.5rem; margin-bottom: 2.2rem; text-align: left; font-size: 1.08rem; color: #222; }
+        .continue-btn { display: block; margin: 1.2rem auto 0 auto; background: #28a745; color: #fff; border: none; border-radius: 6px; font-size: 1.13rem; font-weight: 600; padding: 0.8rem 2.2rem; cursor: pointer; box-shadow: 0 2px 6px rgba(40,167,69,0.13); transition: background 0.2s; }
+        .continue-btn:hover { background: #218838; }
+    </style>
+</head>
+<body>
+    <div class="landing-container">
+        <div class="landing-title">Welcome to GAPSWORK</div>
+        <div class="landing-question" id="landing-question">Would you like an introduction to Gaps Coach?</div>
+        <div class="landing-btns" id="landing-btns">
+            <button class="landing-btn" id="btn-yes">Yes</button>
+            <button class="landing-btn" id="btn-no">No</button>
+            <a href="#" class="landing-btn" id="btn-login" style="background:#6c757d; color:#fff; text-decoration:none;">Login</a>
+        </div>
+        <div id="intro-section" style="display:none;">
+            <div class="intro-box">
+                I can help you think through a problem and seek a solution to a gap, by:
+                <ul style="margin-top:0.7em;">
+                  <li><strong>Diagramming</strong> – organizing and spatially arranging thoughts in a Gaps Diagram.</li>
+                  <li><strong>Facilitating</strong> – using questions to draw out your thoughts.</li>
+                  <li><strong>Advising</strong> – finding and suggesting thoughts for your consideration.</li>
+                  <li><strong>Writing</strong> – converting your diagram into Gaps-organized text in any style.</li>
+                  <li><strong>Exporting</strong> – exporting your diagram to other platforms, software, and apps.</li>
+                </ul>
+                <div style="margin-top:1.2em; text-align:center;">
+                  <button class="continue-btn" id="btn-continue">Continue</button>
+                </div>
+                <div style="margin-top:1.5em; color:#007bff; font-size:1.07em; text-align:center;">
+                  <b>Tip:</b> Select <b>"Interactive mode"</b> in the <b>"i"</b> pull down to take full advantage of the GAPS process.
+                </div>
+                <div style="margin-top:1.2em; padding:1rem; background:#fff3cd; border:1px solid #ffeaa7; border-radius:6px; color:#856404; font-size:0.95em;">
+                  <i class="fas fa-key"></i> <b>API Key Required:</b> You'll need to provide your own OpenAI API key to use the AI facilitator. This ensures you control your usage costs.
+                </div>
+            </div>
+        </div>
+    </div>
+    <script>
+      document.getElementById('btn-yes').onclick = function() {
+        document.getElementById('intro-section').style.display = 'block';
+        document.getElementById('landing-btns').style.display = 'none';
+        document.getElementById('landing-question').style.display = 'none';
+      };
+      document.getElementById('btn-no').onclick = function() {
+        window.location.href = '/facilitator';
+      };
+      document.getElementById('intro-section').addEventListener('click', function(e) {
+        if (e.target && e.target.id === 'btn-continue') {
+          window.location.href = '/facilitator';
+        }
+      });
+      document.getElementById('btn-login').onclick = function(e) {
+        e.preventDefault();
+        fetch('/api/logged_in')
+          .then(resp => resp.json())
+          .then(data => {
+            if (data.logged_in) {
+              window.location.href = '/facilitator';
+            } else {
+              window.location.href = '/login';
+            }
+          })
+          .catch(() => {
+            window.location.href = '/login';
+          });
+      };
+    </script>
+</body>
+</html>

@@ -1,0 +1,511 @@
+/* GAPS Facilitator - Main Stylesheet */
+/* Refactored from inline styles for better maintainability */
+
+/* ==========================================================================
+   Base Styles
+   ========================================================================== */
+
+body {
+    font-family: 'Segoe UI', Arial, sans-serif;
+    background: #f7f9fb;
+    margin: 0;
+    padding: 0;
+}
+
+header {
+    background: #007bff;
+    color: #fff;
+    padding: 1rem 2rem;
+    text-align: center;
+}
+
+main {
+    max-width: 1100px;
+    margin: 2rem auto;
+    padding: 1rem;
+    background: #fff;
+    border-radius: 12px;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.07);
+}
+
+/* ==========================================================================
+   Quadrants Layout
+   ========================================================================== */
+
+.side-by-side-container {
+    display: flex;
+    height: 100vh;
+    overflow: hidden;
+}
+
+.im-panel {
+    width: 400px;
+    background: #f8f9fa;
+    border-right: 1px solid #dee2e6;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+.im-header {
+    padding: 15px;
+    border-bottom: 1px solid #dee2e6;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background: white;
+}
+
+.im-chat {
+    flex: 1;
+    padding: 15px;
+    overflow-y: auto;
+    background: white;
+    margin: 10px;
+    border-radius: 8px;
+    border: 1px solid #dee2e6;
+}
+
+.im-input-section {
+    padding: 15px;
+    border-top: 1px solid #dee2e6;
+    background: #f8f9fa;
+}
+
+.im-input-section textarea {
+    resize: vertical;
+    min-height: 80px;
+}
+
+.main-content {
+    flex: 1;
+    overflow: auto;
+}
+
+.quadrant-container {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    grid-template-rows: auto auto;
+    gap: 20px;
+    padding: 20px;
+    min-height: calc(100vh - 100px);
+}
+
+.quadrants {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    grid-template-rows: auto auto;
+    column-gap: 1.5rem;
+    row-gap: 0.75rem;
+    margin-bottom: 2rem;
+    align-items: start;
+    /* Critical: prevent rows from stretching to fill container height */
+    align-content: start;
+}
+
+.quadrant {
+    background: #f1f5fa;
+    border-radius: 10px;
+    padding: 1rem;
+    min-height: 180px;
+    height: auto;
+    overflow: visible;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.03);
+    transition: background-color 0.2s ease, border 0.2s ease;
+    display: flex;
+    flex-direction: column;
+}
+
+.quadrant.drag-over {
+    background: #e3f2fd;
+    border: 2px dashed #2196f3;
+    box-shadow: 0 4px 12px rgba(33, 150, 243, 0.2);
+}
+
+.quadrant h2 {
+    margin-top: 0;
+    font-size: 1.1rem;
+    color: #007bff;
+}
+
+/* ==========================================================================
+   Thought Items
+   ========================================================================== */
+
+.thought-item {
+    background: #fff;
+    border-radius: 6px;
+    margin: 0.5rem 0;
+    padding: 0.5rem 0.75rem;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+/* Number items in each quadrant list using CSS counters */
+#goal-list, #status-list, #analysis-list, #plan-list {
+    counter-reset: thought_item;
+}
+
+#goal-list .thought-item::before,
+#status-list .thought-item::before,
+#analysis-list .thought-item::before,
+#plan-list .thought-item::before {
+    counter-increment: thought_item;
+    content: counter(thought_item) ". ";
+    font-weight: 600;
+    margin-right: 6px;
+    color: #444;
+}
+
+.thought-controls button,
+.thought-controls select {
+    background: none;
+    border: none;
+    color: #888;
+    margin-left: 0.5rem;
+    cursor: pointer;
+    font-size: 1rem;
+}
+
+.thought-controls button:hover,
+.thought-controls select:hover {
+    color: #007bff;
+}
+
+.thought-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    flex-grow: 1;
+    overflow: visible;
+    min-height: 100px;
+    padding: 10px;
+    border: 1px solid #ddd;
+    border-radius: 5px;
+    background-color: #f9f9f9;
+    width: 100%;
+    box-sizing: border-box;
+}
+
+.thought-list.drop-highlight {
+    background: #e0f7fa;
+    border: 2px dashed #007bff;
+}
+
+/* ==========================================================================
+   Add Thought Form
+   ========================================================================== */
+
+.add-thought {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-bottom: 1.5rem;
+}
+
+.add-thought input,
+.add-thought select {
+    padding: 0.5rem;
+    border-radius: 5px;
+    border: 1px solid #ccc;
+    font-size: 1rem;
+}
+
+.add-thought button {
+    background: #007bff;
+    color: #fff;
+    border: none;
+    padding: 0.6rem 1.2rem;
+    border-radius: 5px;
+    font-size: 1rem;
+    cursor: pointer;
+    transition: background 0.2s;
+}
+
+.add-thought button:disabled {
+    background: #b0d1ff;
+    cursor: not-allowed;
+}
+
+.add-thought .voice-btn {
+    background: none;
+    border: none;
+    color: #007bff;
+    font-size: 1.3rem;
+    cursor: pointer;
+}
+
+.add-thought .voice-btn.listening {
+    color: #e74c3c;
+}
+
+/* ==========================================================================
+   AI Panel
+   ========================================================================== */
+
+.ai-panel {
+    background: #f8fafc;
+    padding: 1.2rem;
+    border-radius: 10px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+    margin-bottom: 2rem;
+}
+
+.ai-panel label {
+    font-weight: 600;
+    margin-right: 1rem;
+}
+
+.ai-panel select,
+.ai-panel textarea {
+    margin-bottom: 0.5rem;
+}
+
+.ai-panel .ai-output {
+    background: #fff;
+    border-radius: 7px;
+    padding: 1rem;
+    margin-top: 1rem;
+    border: 1px solid #e0e6ee;
+    min-height: 60px;
+    font-size: 1.06rem;
+}
+
+.ai-panel .ai-actions {
+    margin-top: 0.5rem;
+}
+
+/* ==========================================================================
+   Knowledge Base Content Styling
+   ========================================================================== */
+
+#gaps-kb-content h1,
+#gaps-kb-content h2,
+#gaps-kb-content h3 {
+    font-weight: bold;
+    margin-top: 1.2em;
+    margin-bottom: 0.5em;
+}
+
+#gaps-kb-content h1 {
+    font-size: 1.7em;
+    border-bottom: 1px solid #e0e0e0;
+    padding-bottom: 0.2em;
+}
+
+#gaps-kb-content h2 {
+    font-size: 1.3em;
+    color: #007bff;
+}
+
+#gaps-kb-content h3 {
+    font-size: 1.15em;
+    color: #0056b3;
+}
+
+#gaps-kb-content ul,
+#gaps-kb-content ol {
+    margin-left: 1.3em;
+    margin-bottom: 1em;
+}
+
+#gaps-kb-content li {
+    margin-bottom: 0.3em;
+}
+
+#gaps-kb-content p {
+    margin: 0.7em 0;
+}
+
+#gaps-kb-content pre {
+    background: #f6f8fa;
+    border-radius: 6px;
+    padding: 0.8em 1em;
+    overflow-x: auto;
+    margin: 1em 0;
+}
+
+#gaps-kb-content code {
+    font-family: "Fira Mono", "Consolas", "Menlo", monospace;
+    background: #f6f8fa;
+    padding: 0.1em 0.3em;
+    border-radius: 3px;
+    font-size: 0.98em;
+}
+
+#gaps-kb-content blockquote {
+    border-left: 4px solid #d0d7de;
+    background: #f7f7fa;
+    color: #555;
+    margin: 1em 0;
+    padding: 0.6em 1em;
+}
+
+#gaps-kb-content pre,
+#gaps-kb-content code,
+#gaps-kb-content pre code {
+    background: #f6f8fa !important;
+    border-radius: 6px;
+    padding: 0.8em 1em;
+    overflow-x: auto;
+    margin: 1em 0;
+    font-family: "Fira Mono", "Consolas", "Menlo", monospace;
+    font-size: 0.98em;
+    color: #222;
+}
+
+#gaps-kb-content code {
+    padding: 0.1em 0.3em;
+    border-radius: 3px;
+    background: #f6f8fa !important;
+}
+
+/* ==========================================================================
+   Notifications
+   ========================================================================== */
+
+.notification {
+    display: none;
+    position: fixed;
+    top: 1.5rem;
+    right: 2rem;
+    background: #007bff;
+    color: #fff;
+    padding: 0.8rem 1.2rem;
+    border-radius: 6px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+    z-index: 1000;
+    font-size: 1.05rem;
+}
+
+.interactive-mode-toggle {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    width: 60px;
+    height: 60px;
+    background: #007bff;
+    color: white;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+    z-index: 1000;
+}
+
+.im-minimize-icon {
+    position: fixed;
+    bottom: 20px;
+    left: 20px;
+    width: 50px;
+    height: 50px;
+    background: #6c757d;
+    color: white;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+    z-index: 1000;
+    transition: all 0.3s ease;
+}
+
+.im-minimize-icon:hover {
+    background: #5a6268;
+    transform: scale(1.1);
+}
+
+/* ==========================================================================
+   Help System
+   ========================================================================== */
+
+#help-overlay {
+    display: none;
+    position: fixed;
+    left: 0;
+    top: 0;
+    width: 100vw;
+    height: 100vh;
+    background: rgba(0, 0, 0, 0.35);
+    z-index: 3000;
+}
+
+.help-circle {
+    position: fixed;
+    width: 38px;
+    height: 38px;
+    background: #fffbe0;
+    border: 2.5px solid #ffe066;
+    border-radius: 50%;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+    color: #007bff;
+    font-size: 1.3em;
+    font-weight: bold;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    z-index: 3100;
+    transition: background 0.2s, border 0.2s;
+}
+
+.help-circle:hover {
+    background: #ffe066;
+    color: #222;
+}
+
+#help-tooltip {
+    position: fixed;
+    background: #fff;
+    border: 1.5px solid #007bff;
+    border-radius: 8px;
+    padding: 1em 1.3em;
+    font-size: 1.08em;
+    color: #222;
+    box-shadow: 0 2px 14px rgba(0, 0, 0, 0.09);
+    max-width: 360px;
+    z-index: 3200;
+    display: none;
+}
+
+/* ==========================================================================
+   UI Elements
+   ========================================================================== */
+
+.disabled-link {
+    pointer-events: none;
+    opacity: 0.5;
+}
+
+#trash-can {
+    right: -160px !important;
+    /* move even further right */
+    top: 65%;
+    /* move slightly lower */
+    z-index: 1 !important;
+    /* lowest possible */
+}
+
+#board-menu-dropdown {
+    position: absolute !important;
+    z-index: 2000 !important;
+}
+
+/* ==========================================================================
+   Responsive Design
+   ========================================================================== */
+
+@media (max-width: 800px) {
+    main {
+        padding: 0.5rem;
+    }
+
+    .quadrants {
+        grid-template-columns: 1fr;
+    }
+}

@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Edit LLM Prompt Template</title>
+    <style>
+        body { font-family: Arial, sans-serif; background: #f7f7f7; margin: 0; padding: 0; }
+        .container { max-width: 700px; margin: 40px auto; background: #fff; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.08); padding: 32px; }
+        h1 { font-size: 1.6em; margin-bottom: 0.7em; }
+        textarea { width: 100%; min-height: 220px; font-size: 1.1em; padding: 12px; border-radius: 5px; border: 1px solid #bbb; margin-bottom: 1em; }
+        button { background: #007bff; color: #fff; border: none; padding: 0.7em 1.4em; border-radius: 5px; font-size: 1em; cursor: pointer; }
+        button:disabled { background: #aaa; }
+        .status { margin-top: 1em; font-size: 1em; }
+    </style>
+</head>
+<body>
+<div class="container">
+    <div style="margin-bottom: 1em;">
+        <a href="/facilitator" style="color: #007bff; text-decoration: none; font-size: 0.9em;">
+            ← Back to App
+        </a>
+    </div>
+    <h1>Edit LLM Prompt Template</h1>
+    <form id="prompt-form">
+        <textarea id="prompt-textarea"></textarea>
+        <br>
+        <button type="submit">Save Prompt</button>
+        <span class="status" id="status"></span>
+    </form>
+</div>
+<script>
+    async function getCsrfToken() {
+        const resp = await fetch('/get_csrf_token');
+        const data = await resp.json();
+        return data.csrf_token;
+    }
+
+    async function loadPrompt() {
+        const resp = await fetch('/admin/get_prompt');
+        const data = await resp.json();
+        if (data.prompt !== undefined) {
+            document.getElementById('prompt-textarea').value = data.prompt;
+        }
+    }
+    document.addEventListener('DOMContentLoaded', loadPrompt);
+
+    document.getElementById('prompt-form').addEventListener('submit', async function(e) {
+        e.preventDefault();
+        const prompt = document.getElementById('prompt-textarea').value;
+        const csrfToken = await getCsrfToken();
+        const resp = await fetch('/admin/set_prompt', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': csrfToken
+            },
+            body: JSON.stringify({ prompt })
+        });
+        const data = await resp.json();
+        const status = document.getElementById('status');
+        if (data.success) {
+            status.textContent = 'Prompt saved!';
+            status.style.color = 'green';
+        } else {
+            status.textContent = data.error || 'Failed to save prompt.';
+            status.style.color = 'red';
+        }
+    });
+</script>
+</body>
+</html>
