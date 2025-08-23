@@ -88,7 +88,7 @@ function setupMenuHandlers() {
  */
 async function handleOpenBoard(e) {
     e.preventDefault();
-    console.log('[MENU] Open Board clicked');
+    dlog('[MENU] Open Board clicked');
     
     const openBoardModal = document.getElementById('open-board-modal');
     const boardList = document.getElementById('board-list');
@@ -100,11 +100,8 @@ async function handleOpenBoard(e) {
             boardList.innerHTML = '<div style="padding:1em; color:#888;">Loading boards...</div>';
             
             try {
-                const resp = await fetch('/list_boards');
-                if (!resp.ok) throw new Error('Failed to fetch boards: ' + resp.status + ' ' + resp.statusText);
-                
-                const data = await resp.json();
-                console.log('[DEBUG] /list_boards response:', data);
+                const data = await getJSON('/list_boards');
+                dlog('[DEBUG] /list_boards response:', data);
                 
                 if (data && Array.isArray(data.boards) && data.boards.length > 0) {
                     let boardsHtml = '';
@@ -120,7 +117,7 @@ async function handleOpenBoard(e) {
                                     dateStr = date.toLocaleDateString();
                                 }
                             } catch (e) {
-                                console.warn('Invalid date for board:', board.created_at);
+                                dwarn('Invalid date for board:', board.created_at);
                             }
                         }
                         
@@ -143,7 +140,10 @@ async function handleOpenBoard(e) {
                     boardList.innerHTML = '<div style="padding:1em; color:#888;">No boards found. Create a new board to get started.</div>';
                 }
             } catch (error) {
-                console.error('[ERROR] Failed to load boards:', error);
+                derror('[ERROR] Failed to load boards:', error);
+                if (error && error.status === 429) {
+                    showNotification('AI quota exceeded (429). Try again later.', true);
+                }
                 boardList.innerHTML = '<div style="padding:1em; color:#c00;">Failed to load boards. Please try again.</div>';
             }
         }
@@ -155,7 +155,7 @@ async function handleOpenBoard(e) {
  */
 function handleCreateBoard(e) {
     e.preventDefault();
-    console.log('[MENU] Create Board clicked');
+    dlog('[MENU] Create Board clicked');
     
     const createBoardModal = document.getElementById('create-board-modal');
     if (createBoardModal) {
@@ -260,7 +260,13 @@ function selectBoard(boardId) {
     showNotification('Loading board...');
     
     // Set the board ID and redirect
-    window.location.href = '/facilitator?board_id=' + boardId;
+    console.log('[DEBUG] About to redirect to:', '/facilitator?board_id=' + boardId);
+    try {
+        window.location.href = '/facilitator?board_id=' + boardId;
+        console.log('[DEBUG] Redirect initiated successfully');
+    } catch (error) {
+        console.error('[ERROR] Failed to redirect:', error);
+    }
 }
 
 /**
@@ -288,7 +294,7 @@ function handleImportData(e) {
  */
 async function handleDeleteBoard(e) {
     e.preventDefault();
-    console.log('[MENU] Delete Board clicked');
+    dlog('[MENU] Delete Board clicked');
     
     if (!window.boardId) {
         alert('Please select a board first.');
@@ -306,7 +312,7 @@ async function handleDeleteBoard(e) {
  */
 function handleHelp(e) {
     e.preventDefault();
-    console.log('[MENU] Help clicked');
+    dlog('[MENU] Help clicked');
     
     const helpOverlay = document.getElementById('help-overlay');
     if (helpOverlay) {
@@ -326,16 +332,7 @@ async function importBoardData(file) {
         // Parse the JSON content
         const boardData = JSON.parse(fileContent);
         
-        const resp = await fetch('/import_board', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'X-CSRFToken': getCsrfToken()
-            },
-            body: JSON.stringify(boardData)
-        });
-        
-        const result = await resp.json();
+        const result = await postJSON('/import_board', boardData);
         
         if (result.success) {
             showNotification('Board imported successfully!');
@@ -346,7 +343,10 @@ async function importBoardData(file) {
             alert('Failed to import board: ' + (result.error || 'Unknown error'));
         }
     } catch (error) {
-        console.error('[ERROR] Failed to import board:', error);
+        derror('[ERROR] Failed to import board:', error);
+        if (error && error.status === 429) {
+            showNotification('AI quota exceeded (429). Try again later.', true);
+        }
         alert('Error importing board. Please try again.');
     }
 }
@@ -356,16 +356,7 @@ async function importBoardData(file) {
  */
 async function deleteBoardById(boardId) {
     try {
-        const resp = await fetch('/delete_board', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'X-CSRFToken': getCsrfToken()
-            },
-            body: JSON.stringify({ board_id: boardId })
-        });
-        
-        const result = await resp.json();
+        const result = await postJSON('/delete_board', { board_id: boardId });
         
         if (result.success) {
             showNotification('Board deleted successfully!');
@@ -373,7 +364,7 @@ async function deleteBoardById(boardId) {
             
             // Clear board ID from localStorage since board was deleted
             localStorage.removeItem('gaps-current-board-id');
-            console.log('[DEBUG] Board ID cleared from localStorage after deletion');
+            dlog('[DEBUG] Board ID cleared from localStorage after deletion');
             
             setTimeout(() => {
                 location.reload();
@@ -382,7 +373,10 @@ async function deleteBoardById(boardId) {
             alert('Failed to delete board: ' + (result.error || 'Unknown error'));
         }
     } catch (error) {
-        console.error('[ERROR] Failed to delete board:', error);
+        derror('[ERROR] Failed to delete board:', error);
+        if (error && error.status === 429) {
+            showNotification('AI quota exceeded (429). Try again later.', true);
+        }
         alert('Error deleting board. Please try again.');
     }
 }
@@ -400,16 +394,7 @@ async function createNewBoard(boardName) {
     }
 
     try {
-        const resp = await fetch('/create_board', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'X-CSRFToken': getCsrfToken()
-            },
-            body: JSON.stringify({ name: boardName })
-        });
-
-        const result = await resp.json();
+        const result = await postJSON('/create_board', { name: boardName });
 
         if (result.success) {
             showNotification('Board created successfully!');
@@ -424,7 +409,7 @@ async function createNewBoard(boardName) {
                 window.boardId = result.board_id;
                 // Save board ID to localStorage for persistence
                 localStorage.setItem('gaps-current-board-id', result.board_id);
-                console.log('[DEBUG] New board ID saved to localStorage:', result.board_id);
+                dlog('[DEBUG] New board ID saved to localStorage:', result.board_id);
             }
             
             // Switch to the new board immediately
@@ -435,7 +420,10 @@ async function createNewBoard(boardName) {
             alert('Failed to create board: ' + (result.error || 'Unknown error'));
         }
     } catch (error) {
-        console.error('[ERROR] Failed to create board:', error);
+        derror('[ERROR] Failed to create board:', error);
+        if (error && error.status === 429) {
+            showNotification('AI quota exceeded (429). Try again later.', true);
+        }
         alert('Error creating board. Please try again.');
     } finally {
         if (createBtn) {

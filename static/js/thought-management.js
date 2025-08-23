@@ -12,7 +12,7 @@ function initializeThoughtManagement() {
     const newThoughtQuadrant = document.getElementById('new-thought-quadrant');
 
     if (!addBtn || !newThoughtInput || !newThoughtQuadrant) {
-        console.log('[DEBUG] Thought management elements not found');
+        dlog('[DEBUG] Thought management elements not found');
         return;
     }
 
@@ -58,16 +58,7 @@ async function handleConversationalAddThought() {
     addBtn.textContent = 'Thinking...';
 
     try {
-        const resp = await fetch('/ai_conversation', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'X-CSRFToken': getCsrfToken()
-            },
-            body: JSON.stringify({ content, board_id: boardId })
-        });
-
-        const result = await resp.json();
+        const result = await postJSON('/ai_conversation', { content, board_id: boardId });
 
         if (result.success && result.thoughts) {
             // AI classified and added thoughts
@@ -112,7 +103,11 @@ async function handleConversationalAddThought() {
             addBtn.textContent = 'Add';
         }
     } catch (e) {
-        showNotification('Error: ' + e.message, true);
+        if (e && e.status === 429) {
+            showNotification('AI quota exceeded (429). Try again later.', true);
+        } else {
+            showNotification('Error: ' + e.message, true);
+        }
         addBtn.textContent = 'Add';
     } finally {
         addBtn.disabled = false;
@@ -140,20 +135,11 @@ async function handleManualAddThought() {
     addBtn.textContent = 'Adding...';
 
     try {
-        const addResp = await fetch('/add_thought', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'X-CSRFToken': getCsrfToken()
-            },
-            body: JSON.stringify({
-                content: content,
-                quadrant: quadrant,
-                board_id: boardId
-            })
+        const addResult = await postJSON('/add_thought', {
+            content: content,
+            quadrant: quadrant,
+            board_id: boardId
         });
-
-        const addResult = await addResp.json();
 
         if (addResult.success) {
             showNotification('Thought added!');
@@ -226,6 +212,71 @@ async function deleteThought(thoughtId, element) {
 }
 
 /**
+ * Add a thought to a specific quadrant (used by Quick Add Thought modal)
+ */
+async function addThought(content, quadrant) {
+    console.log(`[DEBUG] addThought called with content: "${content}", quadrant: "${quadrant}"`);
+    
+    if (!content || !content.trim()) {
+        showNotification('Please enter a thought', true);
+        return;
+    }
+    
+    const boardId = getCurrentBoardId();
+    if (!boardId) {
+        showNotification('No board selected', true);
+        return;
+    }
+    
+    try {
+        const targetQuadrant = quadrant === 'auto' ? 'status' : quadrant;
+        
+        const resp = await fetch('/add_thought', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': getCsrfToken()
+            },
+            body: JSON.stringify({
+                content: content.trim(),
+                quadrant: targetQuadrant,
+                board_id: boardId
+            })
+        });
+
+        const result = await resp.json();
+
+        if (result.success) {
+            showNotification('Thought added!');
+            
+            // Add thought to DOM without page reload (preserves Interactive Mode)
+            const thoughtId = result.thought_id || result.thought?.id;
+            if (thoughtId) {
+                dlog(`[DEBUG] Quick Add: Adding thought with ID ${thoughtId} to ${targetQuadrant} quadrant`);
+                addThoughtToDOM(targetQuadrant, content.trim(), thoughtId);
+            } else {
+                dlog('[DEBUG] Quick Add: No thought ID returned, will reload page');
+                setTimeout(() => location.reload(), 1000);
+            }
+        } else {
+            // Handle duplicate error specifically
+            if (result.error && result.error.includes('Duplicate')) {
+                showNotification('This thought already exists in the quadrant', true);
+            } else {
+                showNotification('Failed to add thought: ' + (result.error || 'Unknown error'), true);
+            }
+        }
+    } catch (error) {
+        derror('[ERROR] Failed to add thought:', error);
+        if (error && error.status === 429) {
+            showNotification('AI quota exceeded (429). Try again later.', true);
+        } else {
+            showNotification('Error adding thought. Please try again.', true);
+        }
+    }
+}
+
+/**
  * Get current board ID
  */
 function getCurrentBoardId() {
@@ -236,7 +287,7 @@ function getCurrentBoardId() {
  * Drag and drop functionality
  */
 function dragThought(event, thoughtId) {
-    console.log('dragThought called', thoughtId);
+    dlog('dragThought called', thoughtId);
     event.dataTransfer.setData('text/plain', thoughtId);
     event.dataTransfer.effectAllowed = 'move';
 }
@@ -266,7 +317,7 @@ function dragLeave(event) {
 function dropThought(event, targetQuadrant) {
     event.preventDefault();
     const thoughtId = event.dataTransfer.getData('text/plain');
-    console.log('dropThought', thoughtId, 'to', targetQuadrant);
+    dlog('dropThought', thoughtId, 'to', targetQuadrant);
     
     // Clear drag highlighting
     clearTrashHighlight();
@@ -280,20 +331,11 @@ function dropThought(event, targetQuadrant) {
  */
 async function moveThought(thoughtId, newQuadrant, element) {
     try {
-        const resp = await fetch('/move_thought', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'X-CSRFToken': getCsrfToken()
-            },
-            body: JSON.stringify({ 
-                thought_id: thoughtId, 
-                quadrant: newQuadrant,
-                board_id: getCurrentBoardId()
-            })
+        const result = await postJSON('/move_thought', { 
+            thought_id: thoughtId, 
+            quadrant: newQuadrant,
+            board_id: getCurrentBoardId()
         });
-
-        const result = await resp.json();
 
         if (result.success) {
             showNotification(`Thought moved to ${newQuadrant}!`);
@@ -302,8 +344,12 @@ async function moveThought(thoughtId, newQuadrant, element) {
             showNotification('Failed to move thought: ' + (result.error || 'Unknown error'), true);
         }
     } catch (error) {
-        console.error('[ERROR] Failed to move thought:', error);
-        showNotification('Error moving thought. Please try again.', true);
+        derror('[ERROR] Failed to move thought:', error);
+        if (error && error.status === 429) {
+            showNotification('AI quota exceeded (429). Try again later.', true);
+        } else {
+            showNotification('Error moving thought. Please try again.', true);
+        }
     }
 }
 
@@ -318,19 +364,10 @@ async function editThought(thoughtId, currentContent, element) {
     }
 
     try {
-        const resp = await fetch('/edit_thought', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'X-CSRFToken': getCsrfToken()
-            },
-            body: JSON.stringify({ 
-                thought_id: thoughtId, 
-                content: newContent.trim() 
-            })
+        const result = await postJSON('/edit_thought', { 
+            thought_id: thoughtId, 
+            content: newContent.trim() 
         });
-
-        const result = await resp.json();
 
         if (result.success) {
             // Update the element content
@@ -343,8 +380,12 @@ async function editThought(thoughtId, currentContent, element) {
             showNotification('Failed to update thought: ' + (result.error || 'Unknown error'), true);
         }
     } catch (error) {
-        console.error('[ERROR] Failed to edit thought:', error);
-        showNotification('Error editing thought. Please try again.', true);
+        derror('[ERROR] Failed to edit thought:', error);
+        if (error && error.status === 429) {
+            showNotification('AI quota exceeded (429). Try again later.', true);
+        } else {
+            showNotification('Error editing thought. Please try again.', true);
+        }
     }
 }
 

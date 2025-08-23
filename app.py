@@ -29,8 +29,8 @@ def get_app_version():
                 file_mtime = os.path.getmtime(file_path)
                 latest_mtime = max(latest_mtime, file_mtime)
         
-        # Return timestamp as version string
-        return str(int(latest_mtime))
+        # Return timestamp as version string, with current time to force refresh
+        return str(int(time.time()))
     except Exception as e:
         # Fallback version if file checking fails
         return str(int(time.time()))
@@ -177,7 +177,7 @@ import re
 def landing():
     return render_template('landing.html')
 
-@app.route('/api-key-setup', methods=['GET', 'POST'])
+@app.route('/api_key_setup', methods=['GET', 'POST'])
 def api_key_setup():
     """Handle OpenAI API key setup"""
     if request.method == 'POST':
@@ -232,9 +232,17 @@ def clear_api_key():
 
 def require_api_key():
     """Check if user has provided an API key, redirect to setup if not"""
-    from openai_api import get_api_key
-    if not get_api_key():
-        return redirect(url_for('api_key_setup', next=request.url))
+    # Only require OpenAI API key if using OpenAI provider
+    if AI_PROVIDER == 'openai':
+        from openai_api import get_api_key
+        if not get_api_key():
+            return redirect(url_for('api_key_setup', next=request.url))
+    # For Gemini provider, check if Gemini API key is available
+    elif AI_PROVIDER == 'gemini':
+        gemini_key = os.environ.get('GEMINI_API_KEY')
+        if not gemini_key:
+            flash('Gemini API key not found in environment variables. Please set GEMINI_API_KEY.', 'error')
+            return redirect(url_for('facilitator'))
     return None
 
 @app.route('/facilitator', methods=['GET', 'POST'])
@@ -320,14 +328,22 @@ def interactive_gaps():
     """
     Route for interactive GAPS AI. Uses GAPS-Coach logic for structured, hybrid conversational output.
     """
-    # Check for API key first
-    from openai_api import get_api_key
-    if not get_api_key():
-        return jsonify({
-            'error': 'OpenAI API key required',
-            'message': 'Please enter your OpenAI API key in settings to use the AI facilitator.',
-            'redirect': '/api-key-setup'
-        }), 400
+    # Check for API key based on provider
+    if AI_PROVIDER == 'openai':
+        from openai_api import get_api_key
+        if not get_api_key():
+            return jsonify({
+                'error': 'OpenAI API key required',
+                'message': 'Please enter your OpenAI API key in settings to use the AI facilitator.',
+                'redirect': '/api-key-setup'
+            }), 400
+    elif AI_PROVIDER == 'gemini':
+        gemini_key = os.environ.get('GEMINI_API_KEY')
+        if not gemini_key:
+            return jsonify({
+                'error': 'Gemini API key required',
+                'message': 'Gemini API key not found in environment variables. Please set GEMINI_API_KEY.',
+            }), 400
     
     try:
         from models import ConversationTurn, db
@@ -661,6 +677,17 @@ def interactive_gaps():
         
         # Call the LLM and capture the raw response
         ai_result = conversational_facilitator(prompt, quadrants=quadrants)
+
+        # Handle provider-level errors gracefully
+        if isinstance(ai_result, dict) and ai_result.get('action') == 'error':
+            err_code = ai_result.get('code') or 'provider_error'
+            msg = ai_result.get('message') or 'AI provider error'
+            # Map insufficient quota to 429; others to 500
+            status = 429 if err_code == 'insufficient_quota' else 500
+            return jsonify({
+                'error': err_code,
+                'message': msg
+            }), status
         
         # DEBUG: Print the raw AI response
         print("\n=== RAW AI RESPONSE ===", flush=True)

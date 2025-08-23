@@ -1,5 +1,5 @@
 import os
-import openai
+from openai import OpenAI
 from dotenv import load_dotenv
 from flask import session
 
@@ -29,21 +29,14 @@ def validate_api_key(api_key):
         return False, "Invalid API key format. OpenAI keys start with 'sk-'"
     
     try:
-        # Save current key
-        old_key = openai.api_key
+        # Test the new key with a minimal request using new client format
+        client = OpenAI(api_key=api_key)
         
-        # Test the new key with a minimal request
-        openai.api_key = api_key
-        response = openai.Model.list()
-        
-        # Restore old key
-        openai.api_key = old_key
+        # Make a simple API call to validate the key
+        response = client.models.list()
         
         return True, "API key is valid"
     except Exception as e:
-        # Restore old key on error
-        if 'old_key' in locals():
-            openai.api_key = old_key
         return False, f"API key validation failed: {str(e)}"
 
 def initialize_openai_client():
@@ -56,8 +49,8 @@ def initialize_openai_client():
         return False, "No API key available"
     
     try:
-        openai.api_key = api_key
-        client = openai  # In 0.28, we use the module directly
+        from openai import OpenAI
+        client = OpenAI(api_key=api_key)
         return True, "OpenAI client initialized successfully"
     except Exception as e:
         client = None
@@ -105,8 +98,10 @@ MODEL_COSTS = {
     "gpt-5": {"input": 1.25, "output": 10.0},
     "gpt-5-mini": {"input": 0.25, "output": 2.0},
     "gpt-5-nano": {"input": 0.05, "output": 0.40},
+    "gpt-4o": {"input": 0.0025, "output": 0.01},
     "gpt-4-turbo": {"input": 0.01, "output": 0.03},
-    "gpt-3.5-turbo": {"input": 0.0015, "output": 0.002}
+    "gpt-3.5-turbo": {"input": 0.0015, "output": 0.002},
+    "gemini-1.5-pro": {"input": 0.00125, "output": 0.005}
 }
 
 def calculate_cost(model, input_tokens, output_tokens):
@@ -198,12 +193,34 @@ def conversational_facilitator(prompt, conversation_history=None, quadrants=None
         )
         messages.append({"role": "user", "content": quadrant_text})
     messages.append({"role": "user", "content": prompt})
-    response = client.ChatCompletion.create(
-        model=OPENAI_MODEL,
-        messages=messages,
-        temperature=0.7,
-        max_tokens=1500
-    )
+    # GPT-5 models use max_completion_tokens instead of max_tokens and don't support custom temperature
+    api_params = {
+        "model": OPENAI_MODEL,
+        "messages": messages
+    }
+    
+    if OPENAI_MODEL.startswith("gpt-5"):
+        api_params["max_completion_tokens"] = 1500
+        # GPT-5 only supports default temperature (1.0), so we don't set it
+    else:
+        api_params["max_tokens"] = 1500
+        api_params["temperature"] = 0.7
+    
+    # Call OpenAI with graceful error handling
+    try:
+        response = client.chat.completions.create(**api_params)
+    except Exception as e:
+        # Normalize common 429/insufficient quota signals
+        msg = str(e)
+        low = msg.lower()
+        code = 'unknown_error'
+        if 'insufficient_quota' in low or 'exceeded your current quota' in low or 'status code: 429' in low or 'error code: 429' in low:
+            code = 'insufficient_quota'
+        return {
+            'action': 'error',
+            'code': code,
+            'message': 'The AI provider returned an error. ' + ('Your quota appears to be exhausted. Please check your OpenAI billing/usage.' if code == 'insufficient_quota' else msg)
+        }
     
     # Track cost for this API call
     if hasattr(response, 'usage'):
@@ -230,18 +247,23 @@ def classify_thought_with_openai(content):
     if not initialized:
         return {"error": "OpenAI API key required. Please enter your API key in settings."}
     
-    system_prompt = load_prompt('prompts/classify_thought.txt')
-
-    user_prompt = f"Input: {content}\nRespond with valid JSON only."
-    response = client.ChatCompletion.create(
-        model=OPENAI_MODEL,
-        messages=[
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_prompt}
-        ],
-        temperature=0.2,
-        max_tokens=300
-    )
+    # GPT-5 models use max_completion_tokens instead of max_tokens and don't support custom temperature
+    api_params = {
+        "model": OPENAI_MODEL,
+        "messages": [
+            {"role": "system", "content": "You are a helpful assistant. Categorize the following thought into one of these categories: goal, status, analysis, plan. Respond with just the category name in lowercase."},
+            {"role": "user", "content": content}
+        ]
+    }
+    
+    if OPENAI_MODEL.startswith("gpt-5"):
+        api_params["max_completion_tokens"] = 512
+        # GPT-5 only supports default temperature (1.0), so we don't set it
+    else:
+        api_params["max_tokens"] = 512
+        api_params["temperature"] = 0.3
+    
+    response = client.chat.completions.create(**api_params)
     
     # Track cost for this API call
     if hasattr(response, 'usage'):
@@ -283,19 +305,23 @@ def suggest_solution_with_openai(problems, obstacles):
     if not initialized:
         return ["Error: OpenAI API key required. Please enter your API key in settings."]
     
-    system_prompt = load_prompt('prompts/suggest_solutions.txt')
-    if not system_prompt:
-        system_prompt = "You are a helpful assistant that suggests solutions to problems."
-
-    response = client.ChatCompletion.create(
-        model=OPENAI_MODEL,
-        messages=[
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": "Please provide your response as a JSON array only."}
-        ],
-        temperature=0.3,
-        max_tokens=512
-    )
+    # GPT-5 models use max_completion_tokens instead of max_tokens and don't support custom temperature
+    api_params = {
+        "model": OPENAI_MODEL,
+        "messages": [
+            {"role": "system", "content": "You are a helpful assistant that generates concise, actionable suggestions based on user input. Respond with exactly 3-5 suggestions, each as a separate line starting with a dash (-). Keep suggestions brief and specific."},
+            {"role": "user", "content": f"Based on this context: {problems}\n\nGenerate 3-5 actionable suggestions for: {obstacles}"}
+        ]
+    }
+    
+    if OPENAI_MODEL.startswith("gpt-5"):
+        api_params["max_completion_tokens"] = 300
+        # GPT-5 only supports default temperature (1.0), so we don't set it
+    else:
+        api_params["max_tokens"] = 300
+        api_params["temperature"] = 0.7
+    
+    response = client.chat.completions.create(**api_params)
     
     # Track cost for this API call
     if hasattr(response, 'usage'):
@@ -337,7 +363,7 @@ def brainstorm_with_openai(topic):
         "Respond as a numbered list."
     )
     user_prompt = f"'{topic}'"
-    response = client.ChatCompletion.create(
+    response = client.chat.completions.create(
         model=OPENAI_MODEL,
         messages=[
             {"role": "system", "content": system_prompt},
@@ -363,22 +389,30 @@ def meeting_minutes_with_openai(summary):
         "Rewrite the following meeting summary as clear, concise meeting minutes."
     )
     user_prompt = f"Summary: '{summary}'\n\nMeeting Minutes:"
-    response = client.ChatCompletion.create(
-        model=OPENAI_MODEL,
-        messages=[
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_prompt}
-        ],
-        temperature=0.2,
-        max_tokens=256
-    )
+    # GPT-5 models use max_completion_tokens instead of max_tokens and don't support custom temperature
+    api_params = {
+        "model": OPENAI_MODEL,
+        "messages": [
+            {"role": "system", "content": "You are a helpful assistant. Analyze the following thought and provide a brief insight or suggestion for improvement. Keep response to 1-2 sentences."},
+            {"role": "user", "content": summary}
+        ]
+    }
+    
+    if OPENAI_MODEL.startswith("gpt-5"):
+        api_params["max_completion_tokens"] = 256
+        # GPT-5 only supports default temperature (1.0), so we don't set it
+    else:
+        api_params["max_tokens"] = 256
+        api_params["temperature"] = 0.2
+    
+    response = client.chat.completions.create(**api_params)
     text = response.choices[0].message.content.strip()
     return {'result': text}
 
 def rewrite_thought_with_openai(thought):
     system_prompt = "You are an assistant that rewrites thoughts to be clearer, more positive, or more actionable. Respond with 1-3 improved versions as a numbered or bulleted list."
     user_prompt = f"Rewrite the following thought to be clearer, more positive, or more actionable.\n\nThought: '{thought}'\n\nRewritten Thought:"
-    response = client.ChatCompletion.create(
+    response = client.chat.completions.create(
         model=OPENAI_MODEL,
         messages=[
             {"role": "system", "content": system_prompt},

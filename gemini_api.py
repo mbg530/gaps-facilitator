@@ -1,6 +1,18 @@
 import os
 import requests
 
+# Import cost tracking functions from openai_api
+try:
+    from openai_api import calculate_cost, log_cost_to_file
+except ImportError:
+    # Fallback functions if import fails
+    def calculate_cost(model, input_tokens, output_tokens):
+        print(f"💰 COST: {model} | In:{input_tokens}tok Out:{output_tokens}tok (cost tracking unavailable)")
+        return 0.0
+    
+    def log_cost_to_file(model, input_tokens, output_tokens, input_cost, output_cost, total_cost):
+        pass
+
 GEMINI_API_KEY = os.environ.get('GEMINI_API_KEY')
 GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1/models/gemini-1.5-pro:generateContent'
 
@@ -31,6 +43,16 @@ def conversational_facilitator(prompt, conversation_history=None, quadrants=None
         resp = requests.post(GEMINI_API_URL, json=payload, params=params, headers=headers, timeout=15)
         resp.raise_for_status()
         data = resp.json()
+        
+        # Extract token usage for cost tracking
+        usage_metadata = data.get('usageMetadata', {})
+        input_tokens = usage_metadata.get('promptTokenCount', 0)
+        output_tokens = usage_metadata.get('candidatesTokenCount', 0)
+        
+        # Track cost for this API call
+        if input_tokens > 0 or output_tokens > 0:
+            calculate_cost('gemini-1.5-pro', input_tokens, output_tokens)
+        
         candidates = data.get('candidates', [])
         if not candidates:
             return {'error': 'No response from Gemini'}
@@ -48,9 +70,16 @@ def conversational_facilitator(prompt, conversation_history=None, quadrants=None
                 result = _json.loads(text_clean)
         except Exception as e:
             # Fallback: treat as plain text
-            if 'clarify' in text.lower() or 'question' in text.lower():
+            # Check if this is a conversational response (questions, follow-ups, advice)
+            conversational_indicators = [
+                'what', 'how', 'would you', 'could you', 'what specific', 
+                'for instance', 'what would', 'let\'s', 'great!', 'looking at',
+                'question', 'clarify', '?'
+            ]
+            if any(indicator in text.lower() for indicator in conversational_indicators):
+                # This is conversational - don't add to diagram
                 return text
-            # Otherwise treat as a single thought
+            # Otherwise treat as a single thought (but this should be rare)
             json_response = {'add_to_quadrant': [{'quadrant': 'status', 'thought': text}]}
             json_str = _json.dumps(json_response)
             return f"{json_str}\n\n{text}"

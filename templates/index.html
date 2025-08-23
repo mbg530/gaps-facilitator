@@ -165,17 +165,48 @@
 
     <!-- Main Content -->
     <main>
-
-
-        <!-- Interactive Mode Link -->
-        <div style="text-align:center;margin-bottom:2rem;">
-            <a id="interactive-gaps-link" href="#" style="background:#007bff;color:#fff;padding:0.8rem 1.5rem;border-radius:8px;text-decoration:none;font-weight:600;display:inline-block;">
-                <i class="fa fa-comments" style="margin-right:0.5rem;"></i>Interactive Mode
-            </a>
-        </div>
-
-        <!-- Quadrants Grid -->
-        <div class="quadrants">
+        <!-- Side-by-side Layout Container -->
+        <div style="display: flex; gap: 2rem; min-height: 600px;">
+            
+            <!-- Left Side: Interactive Mode Panel -->
+            <div style="flex: 0 0 400px; display: flex; flex-direction: column; position: sticky; top: 12px; align-self: flex-start; height: calc(100vh - 160px);">
+                <!-- Interactive Mode Header -->
+                <div style="text-align:center;margin-bottom:1rem;">
+                    <a id="interactive-gaps-link" href="#" style="background:#007bff;color:#fff;padding:0.8rem 1.5rem;border-radius:8px;text-decoration:none;font-weight:600;display:inline-block;">
+                        <i class="fa fa-comments" style="margin-right:0.5rem;"></i>Interactive Mode
+                    </a>
+                </div>
+                
+                <!-- Interactive Mode Content Area -->
+                <div id="interactive-mode-panel" style="flex: 1; background: #f8fafc; border-radius: 10px; padding: 1rem; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04); display: none; flex-direction: column; height: 100%;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; padding-bottom: 0.5rem; border-bottom: 1px solid #e0e6ee;">
+                        <h3 style="margin: 0; color: #007bff;">Interactive Mode</h3>
+                        <button id="close-interactive-panel" style="background: none; border: none; color: #888; font-size: 1.2rem; cursor: pointer;" title="Close">×</button>
+                    </div>
+                    
+                    <!-- Chat Area -->
+                    <div id="interactive-gaps-chat" style="flex: 1; background: #fff; border-radius: 6px; padding: 1rem; margin-bottom: 1rem; overflow-y: auto; min-height: 200px; border: 1px solid #e0e6ee; scroll-behavior: smooth;">
+                        <div style="color: #666; text-align: center; padding: 2rem;">
+                            Click "Start Conversation" to begin...
+                        </div>
+                    </div>
+                    
+                    <!-- Input Area -->
+                    <div style="display: flex; gap: 0.5rem;">
+                        <textarea id="interactive-gaps-input" placeholder="Type your message..." rows="4" style="flex: 1; padding: 0.75rem; border: 1px solid #ccc; border-radius: 5px; font-size: 1rem; resize: vertical; min-height: 80px; max-height: 200px; font-family: inherit;"></textarea>
+                        <button id="send-interactive-message" style="background: #007bff; color: #fff; border: none; padding: 0.75rem 1rem; border-radius: 5px; cursor: pointer;">
+                            <i class="fa fa-paper-plane"></i>
+                        </button>
+                        <button id="interactive-voice-btn" style="background: none; border: 1px solid #007bff; color: #007bff; padding: 0.75rem; border-radius: 5px; cursor: pointer;" title="Voice input">
+                            <i class="fa fa-microphone"></i>
+                        </button>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Right Side: Quadrants Grid -->
+            <div style="flex: 1; display: flex; flex-direction: column;">
+                <div class="quadrants">
             <!-- Status Quadrant -->
             <div class="quadrant" ondragover="allowDrop(event)" ondragenter="dragEnter(event)" ondragleave="dragLeave(event)" ondrop="dropThought(event, 'status')">
                 <h2><i class="fa fa-info-circle"></i> Status</h2>
@@ -263,6 +294,8 @@
                     {% endfor %}
                 </ul>
             </div>
+                </div>
+            </div>
         </div>
     </main>
 
@@ -297,7 +330,7 @@
     </div>
     
     <!-- Interactive Mode Minimized Icon -->
-    <div id="interactive-gaps-minimized-icon" style="display:none;position:fixed;bottom:20px;left:20px;z-index:4000;background:#007bff;color:white;width:60px;height:60px;border-radius:50%;cursor:pointer;box-shadow:0 4px 12px rgba(0,0,0,0.3);display:flex;align-items:center;justify-content:center;font-size:1.2em;transition:all 0.3s ease;" title="Restore Interactive Mode">
+    <div id="interactive-gaps-minimized-icon" style="display:none;position:fixed;bottom:20px;left:20px;z-index:4000;background:#007bff;color:white;width:60px;height:60px;border-radius:50%;cursor:pointer;box-shadow:0 4px 12px rgba(0,0,0,0.3);align-items:center;justify-content:center;font-size:1.2em;transition:all 0.3s ease;" title="Restore Interactive Mode">
         <i class="fas fa-comments"></i>
     </div>
 
@@ -366,6 +399,7 @@
     <!-- Application JavaScript Modules -->
     <script src="/static/js/custom-confirm.js?v={{ app_version }}"></script>
     <script src="/static/js/utils.js?v={{ app_version }}"></script>
+    <script src="/static/js/api.js?v={{ app_version }}"></script>
     <script src="/static/js/interactive-mode.js?v={{ app_version }}"></script>
     <script src="/static/js/board-management.js?v={{ app_version }}"></script>
     <script src="/static/js/thought-management.js?v={{ app_version }}"></script>

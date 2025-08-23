@@ -32,11 +32,75 @@ main {
    Quadrants Layout
    ========================================================================== */
 
+.side-by-side-container {
+    display: flex;
+    height: 100vh;
+    overflow: hidden;
+}
+
+.im-panel {
+    width: 400px;
+    background: #f8f9fa;
+    border-right: 1px solid #dee2e6;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+.im-header {
+    padding: 15px;
+    border-bottom: 1px solid #dee2e6;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background: white;
+}
+
+.im-chat {
+    flex: 1;
+    padding: 15px;
+    overflow-y: auto;
+    background: white;
+    margin: 10px;
+    border-radius: 8px;
+    border: 1px solid #dee2e6;
+}
+
+.im-input-section {
+    padding: 15px;
+    border-top: 1px solid #dee2e6;
+    background: #f8f9fa;
+}
+
+.im-input-section textarea {
+    resize: vertical;
+    min-height: 80px;
+}
+
+.main-content {
+    flex: 1;
+    overflow: auto;
+}
+
+.quadrant-container {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    grid-template-rows: auto auto;
+    gap: 20px;
+    padding: 20px;
+    min-height: calc(100vh - 100px);
+}
+
 .quadrants {
     display: grid;
     grid-template-columns: repeat(2, 1fr);
-    gap: 1.5rem;
+    grid-template-rows: auto auto;
+    column-gap: 1.5rem;
+    row-gap: 0.75rem;
     margin-bottom: 2rem;
+    align-items: start;
+    /* Critical: prevent rows from stretching to fill container height */
+    align-content: start;
 }
 
 .quadrant {
@@ -44,8 +108,12 @@ main {
     border-radius: 10px;
     padding: 1rem;
     min-height: 180px;
+    height: auto;
+    overflow: visible;
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.03);
     transition: background-color 0.2s ease, border 0.2s ease;
+    display: flex;
+    flex-direction: column;
 }
 
 .quadrant.drag-over {
@@ -75,6 +143,22 @@ main {
     align-items: center;
 }
 
+/* Number items in each quadrant list using CSS counters */
+#goal-list, #status-list, #analysis-list, #plan-list {
+    counter-reset: thought_item;
+}
+
+#goal-list .thought-item::before,
+#status-list .thought-item::before,
+#analysis-list .thought-item::before,
+#plan-list .thought-item::before {
+    counter-increment: thought_item;
+    content: counter(thought_item) ". ";
+    font-weight: 600;
+    margin-right: 6px;
+    color: #444;
+}
+
 .thought-controls button,
 .thought-controls select {
     background: none;
@@ -88,6 +172,21 @@ main {
 .thought-controls button:hover,
 .thought-controls select:hover {
     color: #007bff;
+}
+
+.thought-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    flex-grow: 1;
+    overflow: visible;
+    min-height: 100px;
+    padding: 10px;
+    border: 1px solid #ddd;
+    border-radius: 5px;
+    background-color: #f9f9f9;
+    width: 100%;
+    box-sizing: border-box;
 }
 
 .thought-list.drop-highlight {
@@ -279,6 +378,46 @@ main {
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
     z-index: 1000;
     font-size: 1.05rem;
+}
+
+.interactive-mode-toggle {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    width: 60px;
+    height: 60px;
+    background: #007bff;
+    color: white;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+    z-index: 1000;
+}
+
+.im-minimize-icon {
+    position: fixed;
+    bottom: 20px;
+    left: 20px;
+    width: 50px;
+    height: 50px;
+    background: #6c757d;
+    color: white;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+    z-index: 1000;
+    transition: all 0.3s ease;
+}
+
+.im-minimize-icon:hover {
+    background: #5a6268;
+    transform: scale(1.1);
 }
 
 /* ==========================================================================

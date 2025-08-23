@@ -1,5 +1,15 @@
 /* GAPS Facilitator - Utility Functions */
 
+// Lightweight gated logger. Enable by setting window.DEBUG_VERBOSE = true
+// or localStorage.setItem('debug_verbose','1').
+window.DEBUG_VERBOSE = typeof window.DEBUG_VERBOSE !== 'undefined'
+  ? window.DEBUG_VERBOSE
+  : (typeof localStorage !== 'undefined' && localStorage.getItem('debug_verbose') === '1');
+
+function dlog(...args) { if (window.DEBUG_VERBOSE) console.log(...args); }
+function dwarn(...args) { if (window.DEBUG_VERBOSE) console.warn(...args); }
+function derror(...args) { if (window.DEBUG_VERBOSE) console.error(...args); }
+
 /**
  * Helper to extract list items from a quadrant
  * @param {string} listId - The ID of the list element
@@ -76,8 +86,45 @@ function refreshQuadrants() {
  * Update quadrant in background without page refresh (for Interactive Mode)
  */
 function updateQuadrantInBackground(quadrant, thought, thoughtId = null) {
-    console.log(`[DEBUG] Background update: Adding "${thought}" to ${quadrant} quadrant`);
+    dlog(`[DEBUG] Background update: Adding "${thought}" to ${quadrant} quadrant`);
     
+    // First, save to database
+    const boardId = window.boardId;
+    if (!boardId) {
+        derror(`[DEBUG] No board ID available for saving thought`);
+        return;
+    }
+    
+    // Save to database via centralized API helper
+    postJSON('/add_thought', {
+        content: thought,
+        quadrant: quadrant,
+        board_id: boardId
+    })
+    .then(result => {
+        if (result && result.success) {
+            const createdId = result.thought_id || (result.thought && result.thought.id);
+            dlog(`[DEBUG] Successfully saved thought to database with ID: ${createdId}`);
+            addThoughtToDOM(quadrant, thought, createdId);
+        } else {
+            derror(`[DEBUG] Failed to save thought to database:`, result && (result.error || result.message));
+            addThoughtToDOM(quadrant, thought, thoughtId || 0);
+        }
+    })
+    .catch(err => {
+        derror(`[DEBUG] Error saving thought to database:`, err);
+        if (err && err.status === 429) {
+            showNotification('AI quota exceeded (429). Try again later.', true);
+        }
+        // Still add to DOM for immediate feedback
+        addThoughtToDOM(quadrant, thought, thoughtId || 0);
+    });
+}
+
+/**
+ * Add thought to DOM (helper function)
+ */
+function addThoughtToDOM(quadrant, thought, thoughtId) {
     // Find the quadrant container (using actual template IDs)
     const quadrantMap = {
         'status': 'status-list',
@@ -88,46 +135,49 @@ function updateQuadrantInBackground(quadrant, thought, thoughtId = null) {
     
     const containerId = quadrantMap[quadrant];
     if (!containerId) {
-        console.error(`[DEBUG] Unknown quadrant: ${quadrant}`);
+        derror(`[DEBUG] Unknown quadrant: ${quadrant}`);
         return;
     }
     
     const container = document.getElementById(containerId);
     if (!container) {
-        console.error(`[DEBUG] Quadrant container not found: ${containerId}`);
+        derror(`[DEBUG] Quadrant container not found: ${containerId}`);
         return;
     }
     
     // Create new thought element (matching template structure)
     const thoughtElement = document.createElement('li');
     thoughtElement.className = 'thought-item';
-    const safeThoughtId = thoughtId || 0;
+    thoughtElement.setAttribute('data-thought-id', thoughtId);
     const escapedThought = thought.replace(/'/g, "\\'");
     
     thoughtElement.innerHTML = `
         <span class="thought-content">${thought}</span>
         <div class="thought-controls">
-            <button onclick="editThought(${safeThoughtId}, '${escapedThought}', this)" title="Edit">✏️</button>
-            <select onchange="moveThought(${safeThoughtId}, this.value, this)">
+            <button onclick="editThought(${thoughtId}, '${escapedThought}', this)" title="Edit">✏️</button>
+            <select onchange="moveThought(${thoughtId}, this.value, this)">
                 <option value="">Move to...</option>
                 <option value="goal">Goal</option>
                 <option value="analysis">Analysis</option>
                 <option value="plan">Plan</option>
                 <option value="status">Status</option>
             </select>
-            <button onclick="deleteThought(${safeThoughtId}, this)" title="Delete">🗑️</button>
+            <button onclick="deleteThought(${thoughtId}, this)" title="Delete">🗑️</button>
         </div>
     `;
     
     // Add to quadrant
     container.appendChild(thoughtElement);
     
-    console.log(`[DEBUG] Successfully added thought to ${quadrant} quadrant in background`);
+    dlog(`[DEBUG] Successfully added thought to ${quadrant} quadrant DOM with ID: ${thoughtId}`);
 }
 
 // Make functions available globally
 window.refreshQuadrants = refreshQuadrants;
 window.updateQuadrantInBackground = updateQuadrantInBackground;
+window.dlog = dlog;
+window.dwarn = dwarn;
+window.derror = derror;
 
 // Initialize utilities when DOM is loaded
 document.addEventListener('DOMContentLoaded', function() {

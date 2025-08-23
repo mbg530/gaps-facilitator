@@ -1,0 +1,21 @@
+=== LLM COST TRACKING ===
+Time     | Model        | Input Tokens (Cost)   | Output Tokens (Cost) | Total Cost
+-------------------------------------------------------------------------------------
+05:31:41 | gpt-4-turbo  | In: 7376tok($ 0.0738) | Out:  40tok($ 0.0012) | Total:$ 0.0750
+05:34:11 | gpt-4-turbo  | In: 7368tok($ 0.0737) | Out: 117tok($ 0.0035) | Total:$ 0.0772
+06:15:31 | gpt-4o       | In: 7254tok($ 0.0181) | Out:  67tok($ 0.0007) | Total:$ 0.0188
+06:15:52 | gpt-4o       | In: 7275tok($ 0.0182) | Out:  73tok($ 0.0007) | Total:$ 0.0189
+06:16:06 | gpt-4o       | In: 7357tok($ 0.0184) | Out:  82tok($ 0.0008) | Total:$ 0.0192
+08:41:43 | gpt-5-mini   | In: 7293tok($ 1.8233) | Out: 895tok($ 1.7900) | Total:$ 3.6132
+08:42:44 | gpt-5-mini   | In: 7427tok($ 1.8567) | Out:1500tok($ 3.0000) | Total:$ 4.8567
+08:43:29 | gpt-5-mini   | In: 7428tok($ 1.8570) | Out: 305tok($ 0.6100) | Total:$ 2.4670
+08:43:56 | gpt-5-mini   | In: 7472tok($ 1.8680) | Out: 719tok($ 1.4380) | Total:$ 3.3060
+08:44:38 | gpt-5-mini   | In: 7547tok($ 1.8867) | Out:1245tok($ 2.4900) | Total:$ 4.3768
+08:47:08 | gpt-5-mini   | In: 7018tok($ 1.7545) | Out: 343tok($ 0.6860) | Total:$ 2.4405
+08:47:25 | gpt-5-mini   | In: 7053tok($ 1.7632) | Out: 959tok($ 1.9180) | Total:$ 3.6812
+08:51:28 | gpt-4o       | In: 7019tok($ 0.0175) | Out:  14tok($ 0.0001) | Total:$ 0.0177
+08:51:35 | gpt-4o       | In: 7054tok($ 0.0176) | Out:  70tok($ 0.0007) | Total:$ 0.0183
+09:03:30 | gemini-1.5-pro | In: 3636tok($ 0.0045) | Out:  15tok($ 0.0001) | Total:$ 0.0046
+09:03:50 | gemini-1.5-pro | In: 3712tok($ 0.0046) | Out:  76tok($ 0.0004) | Total:$ 0.0050
+09:04:39 | gemini-1.5-pro | In: 3847tok($ 0.0048) | Out: 153tok($ 0.0008) | Total:$ 0.0056
+09:05:36 | gemini-1.5-pro | In: 3979tok($ 0.0050) | Out:  72tok($ 0.0004) | Total:$ 0.0053
