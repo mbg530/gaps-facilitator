@@ -2,6 +2,10 @@ import os
 from openai import OpenAI
 from dotenv import load_dotenv
 from flask import session
+import logging
+
+# Regex is used in fallback parsing for alignment scoring
+import re
 
 # Load environment variables from .env file
 load_dotenv()
@@ -104,8 +108,8 @@ MODEL_COSTS = {
     "gemini-1.5-pro": {"input": 0.00125, "output": 0.005}
 }
 
-def calculate_cost(model, input_tokens, output_tokens):
-    """Calculate cost for API call based on token usage"""
+def calculate_cost(model, input_tokens, output_tokens, endpoint: str = None):
+    """Calculate cost for API call based on token usage. Optionally tag with endpoint."""
     if model not in MODEL_COSTS:
         print(f"Warning: Unknown model {model} for cost calculation")
         return 0.0
@@ -115,14 +119,15 @@ def calculate_cost(model, input_tokens, output_tokens):
     output_cost = (output_tokens / 1000) * costs["output"]
     total_cost = input_cost + output_cost
     
-    print(f"💰 COST: {model} | In:{input_tokens}tok(${input_cost:.4f}) Out:{output_tokens}tok(${output_cost:.4f}) Total:${total_cost:.4f}")
+    endpoint_tag = f" [{endpoint}]" if endpoint else ""
+    print(f"💰 COST: {model}{endpoint_tag} | In:{input_tokens}tok(${input_cost:.4f}) Out:{output_tokens}tok(${output_cost:.4f}) Total:${total_cost:.4f}")
     
     # Also log to dedicated cost tracking file
-    log_cost_to_file(model, input_tokens, output_tokens, input_cost, output_cost, total_cost)
+    log_cost_to_file(model, input_tokens, output_tokens, input_cost, output_cost, total_cost, endpoint=endpoint)
     
     return total_cost
 
-def log_cost_to_file(model, input_tokens, output_tokens, input_cost, output_cost, total_cost):
+def log_cost_to_file(model, input_tokens, output_tokens, input_cost, output_cost, total_cost, endpoint: str = None):
     """Log cost information to a dedicated file for easy tracking and comparison"""
     import os
     from datetime import datetime
@@ -140,7 +145,8 @@ def log_cost_to_file(model, input_tokens, output_tokens, input_cost, output_cost
     timestamp = datetime.now().strftime("%H:%M:%S")
     
     # Create log entry
-    log_entry = f"{timestamp} | {model:<12} | In:{input_tokens:>5}tok(${input_cost:>7.4f}) | Out:{output_tokens:>4}tok(${output_cost:>7.4f}) | Total:${total_cost:>7.4f}\n"
+    ep = f"[{endpoint}]" if endpoint else ""
+    log_entry = f"{timestamp} | {model:<12} {ep:<14} | In:{input_tokens:>5}tok(${input_cost:>7.4f}) | Out:{output_tokens:>4}tok(${output_cost:>7.4f}) | Total:${total_cost:>7.4f}\n"
     
     # Append to file (create header if new file)
     try:
@@ -226,7 +232,7 @@ def conversational_facilitator(prompt, conversation_history=None, quadrants=None
     if hasattr(response, 'usage'):
         input_tokens = response.usage.prompt_tokens
         output_tokens = response.usage.completion_tokens
-        calculate_cost(OPENAI_MODEL, input_tokens, output_tokens)
+        calculate_cost(OPENAI_MODEL, input_tokens, output_tokens, endpoint="board_ai_summary")
     
     # TRUST THE LLM: Just like the prompt testing tool, let the LLM handle everything
     # No backend interference, no forced categorization, no JSON extraction
@@ -428,4 +434,226 @@ def rewrite_thought_with_openai(thought):
     if not filtered:
         filtered = [text]
     return {'suggestions': filtered}
+
+
+def summarize_board_with_openai(quadrants, tone: str = 'neutral', length: str = 'medium'):
+    """
+    Produce a concise, high-level summary of a GAPS board given its quadrants.
+    quadrants: dict with keys 'goal', 'analysis', 'plan', 'status' mapping to list[str]
+    Returns: {'summary': str} or {'error': str}
+    """
+    # Ensure client is ready
+    initialized, message = initialize_openai_client()
+    if not initialized:
+        return {"error": "OpenAI API key required. Please enter your API key in settings."}
+
+    def fmt(items):
+        return "\n".join(f"- {t}" for t in items) if items else "(none)"
+
+    # Early guard: if the entire board is empty, avoid asking the model; return a concise hint
+    goals_list = quadrants.get('goal', []) or []
+    analyses_list = quadrants.get('analysis', []) or []
+    plans_list = quadrants.get('plan', []) or []
+    statuses_list = quadrants.get('status', []) or []
+
+    if not goals_list and not analyses_list and not plans_list and not statuses_list:
+        return {"summary": "No items on the board yet. Add Goals, Analyses, Plans, or Statuses to generate a summary."}
+
+    board_context = (
+        "Board Context (GAPS):\n"
+        f"Goals:\n{fmt(goals_list)}\n\n"
+        f"Analyses:\n{fmt(analyses_list)}\n\n"
+        f"Plans:\n{fmt(plans_list)}\n\n"
+        f"Statuses:\n{fmt(statuses_list)}"
+    )
+
+    # Tone and length handling
+    tone_map = {
+        'neutral': 'Use a neutral, direct tone.',
+        'optimistic': 'Use an optimistic, encouraging tone (without exaggeration).',
+        'cautious': 'Use a cautious, risk-aware tone.',
+        'direct': 'Use a concise, direct tone.',
+    }
+    tone_instruction = tone_map.get((tone or '').lower(), tone_map['neutral'])
+
+    length_map = {
+        'brief': ("1-2 sentences", 120),
+        'medium': ("3-4 sentences", 220),
+        'extended': ("5-7 sentences", 320),
+    }
+    length_label, token_cap = length_map.get((length or '').lower(), length_map['medium'])
+
+    system = (
+        "You are an expert facilitator summarizing a Four Ws (GAPS) board. "
+        f"Write a crisp, executive summary in {length_label} that captures: the central issue, "
+        "current understanding, progress/ideas so far, and recommended next focus. "
+        f"{tone_instruction} "
+        "Avoid repeating bullet points, avoid lists, and do not invent facts."
+    )
+
+    api_params = {
+        "model": OPENAI_MODEL,
+        "messages": [
+            {"role": "system", "content": system},
+            {"role": "user", "content": board_context},
+        ],
+    }
+
+    if OPENAI_MODEL.startswith("gpt-5"):
+        api_params["max_completion_tokens"] = token_cap
+    else:
+        api_params["max_tokens"] = token_cap
+        api_params["temperature"] = 0.4
+
+    try:
+        response = client.chat.completions.create(**api_params)
+    except Exception as e:
+        msg = str(e)
+        low = msg.lower()
+        code = 'unknown_error'
+        if 'insufficient_quota' in low or 'status code: 429' in low or 'error code: 429' in low:
+            code = 'insufficient_quota'
+        return {"error": f"AI error: {msg}", "code": code}
+
+    if hasattr(response, 'usage'):
+        input_tokens = response.usage.prompt_tokens
+        output_tokens = response.usage.completion_tokens
+        calculate_cost(OPENAI_MODEL, input_tokens, output_tokens, endpoint="board_ai_summary")
+
+    text = response.choices[0].message.content.strip()
+    return {"summary": text}
+
+
+def assess_goals_status_alignment(quadrants):
+    """
+    Compare Goals vs Status quadrants and return an alignment score (0-100) and brief rationale.
+    Returns: {"score": int, "rationale": str} or {"error": str}
+    """
+    # Ensure client is ready
+    initialized, message = initialize_openai_client()
+    if not initialized:
+        return {"error": "OpenAI API key required. Please enter your API key in settings."}
+
+    def fmt(items):
+        return "\n".join(f"- {t}" for t in items) if items else "(none)"
+
+    goal_items = quadrants.get('goal', []) or []
+    status_items = quadrants.get('status', []) or []
+
+    # Early guard: if either side is empty, alignment is not meaningful
+    if len(goal_items) == 0 or len(status_items) == 0:
+        rationale = "Alignment requires at least one Goal and one Status. Please add items to both quadrants."
+        # Use 0 to avoid misleading perfect alignment on empty boards
+        return {"score": 0, "rationale": rationale}
+
+    goals = fmt(goal_items)
+    statuses = fmt(status_items)
+
+    system = (
+        "You are an expert coach assessing the alignment between a team's current Status and their Goals on a Four Ws (GAPS) board. "
+        "Output strict JSON only."
+    )
+    user = (
+        "Compare the following sections and rate how well current Status reflects progress toward the stated Goals.\n\n"
+        f"Goals:\n{goals}\n\n"
+        f"Status:\n{statuses}\n\n"
+        "Return JSON with keys: score (0-100 integer where 0 = no alignment, 100 = perfect alignment), "
+        "and rationale (1-2 concise sentences)."
+    )
+
+    api_params = {
+        "model": OPENAI_MODEL,
+        "messages": [
+            {"role": "system", "content": system},
+            {"role": "user", "content": user},
+        ],
+    }
+    if OPENAI_MODEL.startswith("gpt-5"):
+        api_params["max_completion_tokens"] = 120
+    else:
+        api_params["max_tokens"] = 120
+        api_params["temperature"] = 0.2
+
+    try:
+        response = client.chat.completions.create(**api_params)
+    except Exception as e:
+        msg = str(e)
+        low = msg.lower()
+        code = 'unknown_error'
+        if 'insufficient_quota' in low or 'status code: 429' in low or 'error code: 429' in low:
+            code = 'insufficient_quota'
+        return {"error": f"AI error: {msg}", "code": code}
+
+    if hasattr(response, 'usage'):
+        input_tokens = response.usage.prompt_tokens
+        output_tokens = response.usage.completion_tokens
+        calculate_cost(OPENAI_MODEL, input_tokens, output_tokens, endpoint="board_alignment")
+
+    raw = response.choices[0].message.content.strip()
+    debug_enabled = os.environ.get('DEBUG_ALIGNMENT', '0') == '1'
+
+    if debug_enabled:
+        print("[ALIGNMENT] Raw AI response:", raw)
+
+    import json
+    try:
+        if raw.startswith("```"):
+            # Strip code-fence if present
+            raw_json = raw.split('\n', 1)[1]
+            if '```' in raw_json:
+                raw_json = raw_json.split('```', 1)[0]
+        else:
+            raw_json = raw
+        data = json.loads(raw_json)
+        score = int(max(0, min(100, int(data.get('score', 0)))))
+        rationale = str(data.get('rationale', '')).strip()
+        if debug_enabled:
+            print(f"[ALIGNMENT] Parsed JSON score={score}, rationale={rationale}")
+        return {"score": score, "rationale": rationale}
+    except Exception as json_err:
+        # Robust fallback parsing avoiding ranges like "0-100"
+        text = raw
+        score_val = None
+
+        # 1) Try to find explicit score key patterns
+        m = re.search(r'(?i)\bscore\b\s*[:=]\s*(\d{1,3})', text)
+        if m:
+            try:
+                score_val = int(m.group(1))
+            except Exception:
+                score_val = None
+
+        # 2) If not found, try percentage form like "85%"
+        if score_val is None:
+            m = re.search(r'\b(\d{1,3})\s?%\b', text)
+            if m:
+                score_val = int(m.group(1))
+
+        # 3) Else, pick the most plausible standalone number 0..100 not part of a range token like "0-100"
+        if score_val is None:
+            candidates = []
+            for num_m in re.finditer(r'(?<!\d)(\d{1,3})(?!\d)', text):
+                n = int(num_m.group(1))
+                if 0 <= n <= 100:
+                    # Skip if immediately part of a range pattern x- or -x (e.g., 0-100)
+                    start, end = num_m.span(1)
+                    before = text[max(0, start-1):start]
+                    after = text[end:end+1]
+                    if before == '-' or after == '-':
+                        continue
+                    candidates.append(n)
+            if candidates:
+                # Prefer last plausible number (often the final answer)
+                score_val = candidates[-1]
+
+        if score_val is None:
+            score_val = 0
+
+        score_val = max(0, min(100, int(score_val)))
+        rationale = text[:240].strip()
+
+        if debug_enabled:
+            print(f"[ALIGNMENT] Fallback parsed score={score_val}; raw snippet={rationale}")
+
+        return {"score": score_val, "rationale": rationale}
 

@@ -72,6 +72,7 @@ async function handleConversationalAddThought() {
             }
             
             showNotification('Thought(s) added!');
+            if (window.debouncedSummaryRefresh) window.debouncedSummaryRefresh();
             
             // Wait for notification to finish before reloading page
             if (window.notificationTimeout) clearTimeout(window.notificationTimeout);
@@ -97,6 +98,7 @@ async function handleConversationalAddThought() {
             newThoughtInput.value = '';
             newThoughtInput.placeholder = aiPromptPlaceholder;
             addBtn.textContent = 'Add';
+            if (window.debouncedSummaryRefresh) window.debouncedSummaryRefresh();
             
         } else {
             showNotification('Unexpected AI response.', true);
@@ -144,6 +146,7 @@ async function handleManualAddThought() {
         if (addResult.success) {
             showNotification('Thought added!');
             newThoughtInput.value = '';
+            if (window.debouncedSummaryRefresh) window.debouncedSummaryRefresh();
             setTimeout(() => location.reload(), 1200);
         } else {
             showNotification('Failed to add thought: ' + (addResult.error || 'Unknown error'), true);
@@ -202,6 +205,7 @@ async function deleteThought(thoughtId, element) {
             // Remove the element from DOM
             element.closest('.thought-item').remove();
             showNotification('Thought deleted!');
+            if (window.debouncedSummaryRefresh) window.debouncedSummaryRefresh();
         } else {
             showNotification('Failed to delete thought: ' + (result.error || 'Unknown error'), true);
         }
@@ -339,6 +343,7 @@ async function moveThought(thoughtId, newQuadrant, element) {
 
         if (result.success) {
             showNotification(`Thought moved to ${newQuadrant}!`);
+            if (window.debouncedSummaryRefresh) window.debouncedSummaryRefresh();
             setTimeout(() => location.reload(), 1000);
         } else {
             showNotification('Failed to move thought: ' + (result.error || 'Unknown error'), true);
@@ -376,6 +381,7 @@ async function editThought(thoughtId, currentContent, element) {
                 contentElement.textContent = newContent.trim();
             }
             showNotification('Thought updated!');
+            if (window.debouncedSummaryRefresh) window.debouncedSummaryRefresh();
         } else {
             showNotification('Failed to update thought: ' + (result.error || 'Unknown error'), true);
         }

@@ -1500,6 +1500,138 @@ def delete_board():
         db.session.commit()
         return jsonify({'success': True})
 
+@app.route('/board_summary', methods=['GET'])
+@login_required
+def board_summary():
+    """Return counts and recent thoughts per quadrant for a DB-backed board.
+    For now, JSON-store boards are not supported by this endpoint.
+    """
+    import re
+    board_id = request.args.get('board_id')
+    if not board_id:
+        return jsonify({'success': False, 'error': 'Missing board_id'}), 400
+    # Reject UUID-style IDs (JSON boards) for now
+    uuid_re = re.compile(r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$')
+    if uuid_re.match(str(board_id)):
+        return jsonify({'success': False, 'error': 'Board summary not supported for JSON boards yet'}), 400
+    try:
+        # Validate board exists and belongs to current user
+        b = Board.query.get(board_id)
+        if not b:
+            return jsonify({'success': False, 'error': 'Board not found'}), 404
+        if hasattr(b, 'user_id') and b.user_id != current_user.id:
+            return jsonify({'success': False, 'error': 'Forbidden'}), 403
+        quadrants_list = ['status', 'goal', 'analysis', 'plan']
+        summary = {}
+        for q in quadrants_list:
+            q_query = Thought.query.filter_by(board_id=board_id, quadrant=q)
+            count = q_query.count()
+            recent = [t.content for t in q_query.order_by(Thought.id.desc()).limit(5).all()]
+            summary[q] = {'count': count, 'recent': recent}
+        return jsonify({'success': True, 'summary': summary})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/board_ai_summary', methods=['GET'])
+@login_required
+def board_ai_summary():
+    """Return an AI-generated executive summary for a DB-backed board."""
+    import re
+    board_id = request.args.get('board_id')
+    if not board_id:
+        return jsonify({'success': False, 'error': 'Missing board_id'}), 400
+    uuid_re = re.compile(r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$')
+    if uuid_re.match(str(board_id)):
+        return jsonify({'success': False, 'error': 'AI summary not supported for JSON boards yet'}), 400
+    try:
+        b = Board.query.get(board_id)
+        if not b:
+            return jsonify({'success': False, 'error': 'Board not found'}), 404
+        if hasattr(b, 'user_id') and b.user_id != current_user.id:
+            return jsonify({'success': False, 'error': 'Forbidden'}), 403
+        # Gather quadrant texts
+        quadrants_data = {q: [] for q in ['status', 'goal', 'analysis', 'plan']}
+        for q in quadrants_data.keys():
+            items = Thought.query.filter_by(board_id=board_id, quadrant=q).order_by(Thought.id.asc()).all()
+            quadrants_data[q] = [t.content for t in items]
+        # Call AI to summarize
+        tone = (request.args.get('tone') or 'neutral').lower()
+        length = (request.args.get('length') or 'medium').lower()
+        ai_res = ai_api.summarize_board_with_openai(quadrants_data, tone=tone, length=length)
+        if ai_res.get('error'):
+            code = 429 if ai_res.get('code') == 'insufficient_quota' else 500
+            return jsonify({'success': False, 'error': ai_res['error']}), code
+        return jsonify({'success': True, 'summary': ai_res.get('summary', '')})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/board_alignment', methods=['GET'])
+@login_required
+def board_alignment():
+    """Return an AI-computed Goals↔Status alignment score and rationale for a DB-backed board."""
+    import re
+    board_id = request.args.get('board_id')
+    if not board_id:
+        return jsonify({'success': False, 'error': 'Missing board_id'}), 400
+    # Reject UUID-style IDs (JSON boards) for now
+    uuid_re = re.compile(r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$')
+    if uuid_re.match(str(board_id)):
+        return jsonify({'success': False, 'error': 'Alignment not supported for JSON boards yet'}), 400
+    try:
+        b = Board.query.get(board_id)
+        if not b:
+            return jsonify({'success': False, 'error': 'Board not found'}), 404
+        if hasattr(b, 'user_id') and b.user_id != current_user.id:
+            return jsonify({'success': False, 'error': 'Forbidden'}), 403
+        # Build minimal quadrants payload
+        quadrants_data = {
+            'goal': [t.content for t in Thought.query.filter_by(board_id=board_id, quadrant='goal').all()],
+            'status': [t.content for t in Thought.query.filter_by(board_id=board_id, quadrant='status').all()],
+        }
+        ai_res = ai_api.assess_goals_status_alignment(quadrants_data)
+        if ai_res.get('error'):
+            code = 429 if ai_res.get('code') == 'insufficient_quota' else 500
+            return jsonify({'success': False, 'error': ai_res['error']}), code
+        return jsonify({'success': True, 'alignment': {
+            'score': ai_res.get('score', 0),
+            'rationale': ai_res.get('rationale', '')
+        }})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/rename_board', methods=['POST'])
+@login_required
+def rename_board():
+    """Rename a DB-backed board. Enforces unique title per user."""
+    import re
+    data = request.get_json() or {}
+    board_id = data.get('board_id')
+    new_name = (data.get('name') or '').strip()
+    if not board_id:
+        return jsonify({'success': False, 'error': 'Missing board_id'}), 400
+    if not new_name:
+        return jsonify({'success': False, 'error': 'Missing new name'}), 400
+    # Prevent renaming JSON boards for now
+    uuid_re = re.compile(r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$')
+    if uuid_re.match(str(board_id)):
+        return jsonify({'success': False, 'error': 'Renaming JSON boards is not supported yet'}), 400
+    try:
+        # Enforce per-user uniqueness
+        existing = Board.query.filter_by(title=new_name, user_id=current_user.id).first()
+        if existing:
+            return jsonify({'success': False, 'error': 'A board with this name already exists'}), 400
+        board = Board.query.get(board_id)
+        if not board:
+            return jsonify({'success': False, 'error': 'Board not found'}), 404
+        if hasattr(board, 'user_id') and board.user_id != current_user.id:
+            return jsonify({'success': False, 'error': 'Forbidden'}), 403
+        board.title = new_name
+        db.session.commit()
+        return jsonify({'success': True})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
 # --- Conversational AI endpoint for guided thought addition ---
 from flask import session
 

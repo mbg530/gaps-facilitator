@@ -1,5 +1,115 @@
 /* GAPS Facilitator - Board Management Module */
 
+// Inline AI Board Summary rendering below the board title (top-level)
+function renderInlineSummary(text, isError = false) {
+    const el = document.getElementById('board-inline-summary');
+    if (!el) return;
+    el.innerHTML = '';
+    // Summary block
+    const summaryEl = document.createElement('div');
+    summaryEl.textContent = text;
+    el.appendChild(summaryEl);
+    el.style.display = 'block';
+    el.style.borderLeftColor = isError ? '#e74c3c' : '#007bff';
+}
+
+// Render or update the inline Goals↔Status alignment bar below the summary
+function renderAlignmentBar(score, rationale = '') {
+    const container = document.getElementById('board-inline-summary');
+    if (!container) return;
+
+    // Remove existing alignment block if any
+    let alignBlock = container.querySelector('#inline-alignment');
+    if (alignBlock) {
+        alignBlock.remove();
+    }
+    // Remove any existing hint
+    let hint = container.querySelector('#inline-alignment-hint');
+    if (hint) {
+        hint.remove();
+    }
+
+    // Hide alignment bar when either Goals or Status list is empty
+    try {
+        const goals = (typeof getQuadrantListById === 'function') ? getQuadrantListById('goal-list') : [];
+        const statuses = (typeof getQuadrantListById === 'function') ? getQuadrantListById('status-list') : [];
+        if (!goals || goals.length === 0 || !statuses || statuses.length === 0) {
+            // Nothing to align yet — show subtle hint instead of bar
+            hint = document.createElement('div');
+            hint.id = 'inline-alignment-hint';
+            hint.style.cssText = 'margin-top:8px;padding-top:6px;border-top:1px dashed #e2e8f0;color:#6b7280;font-size:12px;';
+            hint.textContent = 'Add at least one Goal and one Status to see alignment.';
+            container.appendChild(hint);
+            return;
+        }
+    } catch (e) {
+        // If DOM inspection fails, continue gracefully
+    }
+
+    // If score is null/undefined, do not render the bar
+    if (score === null || score === undefined) return;
+
+    // Clamp and format values
+    const pct = Math.max(0, Math.min(100, Number(score) || 0));
+    const title = `${pct}% alignment` + (rationale ? ` • ${rationale}` : '');
+
+    alignBlock = document.createElement('div');
+    alignBlock.id = 'inline-alignment';
+    alignBlock.style.cssText = 'margin-top:8px;padding-top:6px;border-top:1px dashed #e2e8f0;';
+    alignBlock.innerHTML = `
+        <div style="display:flex;align-items:center;justify-content:space-between;margin:4px 0 6px 0;color:#475569;font-size:12px;">
+            <span>Status</span>
+            <span style="font-weight:600;color:#111827;">Goals ↔ Status Alignment</span>
+            <span>Goals</span>
+        </div>
+        <div title="${title.replace(/&/g,'&amp;').replace(/"/g,'&quot;')}" style="position:relative;height:10px;background:#e5f6ee;border-radius:999px;overflow:hidden;">
+            <div style="position:absolute;left:0;top:0;bottom:0;width:${pct}%;background:linear-gradient(90deg,#10b981,#22c55e);border-radius:999px;transition:width .35s ease;"></div>
+        </div>
+        <div style="margin-top:6px;color:#6b7280;font-size:12px;">${pct}% aligned</div>
+    `;
+    container.appendChild(alignBlock);
+}
+
+async function loadInlineBoardSummary() {
+    const el = document.getElementById('board-inline-summary');
+    if (!el) return;
+    if (!window.boardId) {
+        renderInlineSummary('Select a board to see its AI summary.');
+        return;
+    }
+    renderInlineSummary('Summarizing board…');
+    try {
+        const res = await fetchBoardAISummary(window.boardId);
+        dlog('[AI] Inline summary response:', res);
+        if (res && res.success) {
+            const txt = (res.summary || '').trim();
+            renderInlineSummary(txt || 'No summary available yet. Try adding thoughts or click Board Summary to refresh.');
+            // Fetch and render alignment after summary
+            try {
+                const alignRes = await fetchBoardAlignment(window.boardId);
+                if (alignRes && alignRes.success && alignRes.alignment) {
+                    const { score = 0, rationale = '' } = alignRes.alignment;
+                    renderAlignmentBar(score, rationale);
+                } else {
+                    renderAlignmentBar(null, (alignRes && (alignRes.error || alignRes.message)) || '');
+                }
+            } catch (ae) {
+                derror('[AI] Alignment fetch failed:', ae);
+                renderAlignmentBar(null, (ae && ae.message) || '');
+            }
+        } else {
+            renderInlineSummary((res && (res.error || res.message)) || 'Unable to generate summary.', true);
+            renderAlignmentBar(null, '');
+        }
+    } catch (e) {
+        renderInlineSummary((e && e.message) || 'Unable to generate summary.', true);
+        renderAlignmentBar(null, '');
+    }
+}
+
+// Expose for manual refresh if needed elsewhere
+window.loadInlineBoardSummary = loadInlineBoardSummary;
+
 /**
  * Initialize board management functionality
  */
@@ -9,11 +119,65 @@ function initializeBoardManagement() {
     const openBoardModal = document.getElementById('open-board-modal');
     const boardList = document.getElementById('board-list');
     const closeBoardModal = document.getElementById('close-board-modal');
+    const refreshBtn = document.getElementById('summary-refresh-btn');
+    const toneSelect = document.getElementById('summary-tone-select');
+    const lengthSelect = document.getElementById('summary-length-select');
 
     // Board menu functionality
     if (dropdown) {
         dropdown.addEventListener('click', function (e) {
             e.stopPropagation();
+        });
+    }
+
+    // Initialize tone/length selectors from storage
+    if (toneSelect) {
+        const storedTone = getStoredTone() || 'neutral';
+        toneSelect.value = storedTone;
+        toneSelect.addEventListener('change', () => {
+            setStoredTone(toneSelect.value);
+            loadInlineBoardSummary();
+        });
+    }
+    if (lengthSelect) {
+        const storedLen = getStoredLength() || 'medium';
+        lengthSelect.value = storedLen;
+        lengthSelect.addEventListener('change', () => {
+            setStoredLength(lengthSelect.value);
+            loadInlineBoardSummary();
+        });
+    }
+
+    // Debounced summary refresh available globally
+    window.debouncedSummaryRefresh = debounce(() => {
+        loadInlineBoardSummary();
+    }, 1500);
+
+    // Populate inline AI summary after boardId is initialized (utils.js)
+    setTimeout(loadInlineBoardSummary, 0);
+
+    // Refresh inline summary on-demand via button
+    if (refreshBtn) {
+        refreshBtn.addEventListener('click', async function() {
+            try {
+                refreshBtn.disabled = true;
+                refreshBtn.style.opacity = '0.75';
+                refreshBtn.style.cursor = 'wait';
+                const oldHTML = refreshBtn.innerHTML;
+                // Inline SVG spinner (SMIL animateTransform)
+                refreshBtn.innerHTML = '<svg width="18" height="18" viewBox="0 0 50 50" aria-hidden="true">\
+  <circle cx="25" cy="25" r="20" fill="none" stroke="#007bff" stroke-width="5" stroke-linecap="round" stroke-dasharray="31.4 31.4">\
+    <animateTransform attributeName="transform" type="rotate" from="0 25 25" to="360 25 25" dur="0.9s" repeatCount="indefinite"/>\
+  </circle>\
+</svg>';
+                renderInlineSummary('Refreshing summary…');
+                await loadInlineBoardSummary();
+                refreshBtn.innerHTML = oldHTML || '⟳';
+            } finally {
+                refreshBtn.disabled = false;
+                refreshBtn.style.opacity = '';
+                refreshBtn.style.cursor = '';
+            }
         });
     }
 
@@ -57,6 +221,8 @@ function setupMenuHandlers() {
     const importDataLink = document.getElementById('import-data');
     const deleteBoardLink = document.getElementById('delete-board');
     const helpLink = document.getElementById('help-link');
+    const renameBoardLink = document.getElementById('rename-board');
+    const boardSummaryLink = document.getElementById('board-summary');
 
     if (openBoardLink) {
         openBoardLink.addEventListener('click', handleOpenBoard);
@@ -80,6 +246,14 @@ function setupMenuHandlers() {
 
     if (helpLink) {
         helpLink.addEventListener('click', handleHelp);
+    }
+
+    if (renameBoardLink) {
+        renameBoardLink.addEventListener('click', handleRenameBoard);
+    }
+
+    if (boardSummaryLink) {
+        boardSummaryLink.addEventListener('click', handleBoardSummary);
     }
 }
 
@@ -318,6 +492,113 @@ function handleHelp(e) {
     if (helpOverlay) {
         helpOverlay.style.display = 'block';
     }
+}
+
+/**
+ * Handle renaming the current board
+ */
+async function handleRenameBoard(e) {
+    e.preventDefault();
+    dlog('[MENU] Rename Board clicked');
+    if (!window.boardId) {
+        alert('Please select a board first.');
+        return;
+    }
+    const currentTitleEl = document.getElementById('board-title-badge');
+    const currentTitle = currentTitleEl ? currentTitleEl.textContent.replace(/^📋\s*/, '') : '';
+    const newName = prompt('Enter a new board name:', currentTitle || '');
+    if (!newName || !newName.trim()) return;
+    try {
+        const res = await renameBoard(window.boardId, newName.trim());
+        if (res && res.success) {
+            showNotification('Board renamed successfully');
+            // Update header title live without reload
+            if (currentTitleEl) {
+                currentTitleEl.textContent = '📋 ' + newName.trim();
+            }
+            if (window.debouncedSummaryRefresh) window.debouncedSummaryRefresh();
+        } else {
+            alert((res && (res.error || res.message)) || 'Failed to rename board');
+        }
+    } catch (err) {
+        derror('[ERROR] Rename board failed:', err);
+        alert(err && err.message ? err.message : 'Rename failed');
+    }
+}
+
+/**
+ * Handle showing a board summary modal
+ */
+async function handleBoardSummary(e) {
+    e.preventDefault();
+    dlog('[MENU] Board Summary clicked');
+    if (!window.boardId) {
+        alert('Please select a board first.');
+        return;
+    }
+    try {
+        const target = document.getElementById('board-inline-summary');
+        if (target) {
+            target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+        renderInlineSummary('Summarizing board…');
+        const res = await fetchBoardAISummary(window.boardId);
+        dlog('[AI] Menu summary response:', res);
+        if (!res || !res.success) {
+            const msg = (res && (res.error || res.message)) || 'Failed to fetch AI summary';
+            renderInlineSummary(msg, true);
+            return;
+        }
+        const text = (res.summary || '').trim();
+        renderInlineSummary(text || 'No summary available yet. Try adding thoughts or click Board Summary to refresh.');
+        // Fetch and render alignment after summary
+        try {
+            const alignRes = await fetchBoardAlignment(window.boardId);
+            if (alignRes && alignRes.success && alignRes.alignment) {
+                const { score = 0, rationale = '' } = alignRes.alignment;
+                renderAlignmentBar(score, rationale);
+            } else {
+                renderAlignmentBar(null, (alignRes && (alignRes.error || alignRes.message)) || '');
+            }
+        } catch (ae) {
+            derror('[AI] Alignment fetch failed:', ae);
+            renderAlignmentBar(null, (ae && ae.message) || '');
+        }
+    } catch (err) {
+        derror('[ERROR] Fetch AI board summary failed:', err);
+        if (err && err.status === 429) {
+            showNotification('AI quota exceeded (429). Try again later.', true);
+        }
+        renderInlineSummary((err && err.message) || 'Failed to fetch AI summary', true);
+        renderAlignmentBar(null, '');
+    }
+}
+
+/**
+ * Simple modal to display multi-line text summary
+ */
+function showSummaryModal(text) {
+    let modal = document.getElementById('board-summary-modal');
+    if (!modal) {
+        modal = document.createElement('div');
+        modal.id = 'board-summary-modal';
+        modal.style.cssText = 'position:fixed;z-index:5000;left:0;top:0;width:100vw;height:100vh;background:rgba(0,0,0,0.35);display:flex;align-items:center;justify-content:center;';
+        modal.innerHTML = `
+            <div style="background:#fff;max-width:560px;width:92%;padding:1.2em 1.2em 1em;border-radius:10px;box-shadow:0 8px 32px rgba(0,0,0,0.18);">
+                <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.5em;">
+                    <h3 style="margin:0;font-size:1.1em;color:#007bff;">Board Summary</h3>
+                    <button id="board-summary-close" style="background:none;border:none;font-size:1.2em;cursor:pointer;color:#888;">×</button>
+                </div>
+                <pre id="board-summary-content" style="white-space:pre-wrap;max-height:60vh;overflow:auto;margin:0;font-family:inherit;line-height:1.4;"></pre>
+            </div>`;
+        document.body.appendChild(modal);
+        modal.addEventListener('click', (e) => { if (e.target === modal) modal.style.display = 'none'; });
+        const btn = modal.querySelector('#board-summary-close');
+        if (btn) btn.addEventListener('click', () => modal.style.display = 'none');
+    }
+    const pre = modal.querySelector('#board-summary-content');
+    if (pre) pre.textContent = text || '';
+    modal.style.display = 'flex';
 }
 
 // Duplicate selectBoard function removed - using the simple redirect version above

@@ -82,6 +82,12 @@
             <a id="delete-board" href="#" style="display:block;padding:0.7em 1em;text-decoration:none;color:#c00;border-bottom:1px solid #eee;">
                 <i class="fa fa-trash" style="margin-right:0.5em;"></i>Delete Board
             </a>
+            <a id="rename-board" href="#" style="display:block;padding:0.7em 1em;text-decoration:none;color:#333;border-bottom:1px solid #eee;">
+                <i class="fa fa-pen" style="margin-right:0.5em;"></i>Rename Board
+            </a>
+            <a id="board-summary" href="#" style="display:block;padding:0.7em 1em;text-decoration:none;color:#333;border-bottom:1px solid #eee;">
+                <i class="fa fa-chart-bar" style="margin-right:0.5em;"></i>Board Summary
+            </a>
             <a id="reset-conversation-main" href="#" style="display:block;padding:0.7em 1em;text-decoration:none;color:#333;border-bottom:1px solid #eee;">
                 <i class="fa fa-refresh" style="margin-right:0.5em;"></i>Reset Conversation
             </a>
@@ -150,17 +156,42 @@
 
     <!-- Main Header -->
     <header>
-        <h1>GAPS Facilitator</h1>
-        <p>Goal-Analysis-Plan-Status Framework for Problem Solving</p>
+        <h1 style="font-size:1.6rem; line-height:1.2; margin:0.2rem 0 0.2rem;">GAPS Facilitator</h1>
+        <p style="margin:0.1rem 0 0.3rem; font-size:0.95rem; color:#555;">Goal-Analysis-Plan-Status Framework for Problem Solving</p>
         {% if board %}
-        <div style="text-align: center; margin: 0.3rem 0; padding: 0.3rem; font-size: 0.9rem; font-weight: 600; color: #007bff; background-color: #f8f9fa; border: 1px solid #dee2e6; border-radius: 3px; display: inline-block;">
+        <div id="board-title-badge" style="text-align: center; margin: 0.3rem 0; padding: 0.3rem; font-size: 0.9rem; font-weight: 600; color: #007bff; background-color: #f8f9fa; border: 1px solid #dee2e6; border-radius: 3px; display: inline-block;">
             📋 {{ board.title or board.name or 'Unnamed Board' }}
         </div>
         {% else %}
-        <div style="text-align: center; margin: 0.3rem 0; padding: 0.3rem; font-size: 0.9rem; font-weight: 600; color: #6c757d; background-color: #f8f9fa; border: 1px solid #dee2e6; border-radius: 3px; display: inline-block;">
+        <div id="board-title-badge" style="text-align: center; margin: 0.3rem 0; padding: 0.3rem; font-size: 0.9rem; font-weight: 600; color: #6c757d; background-color: #f8f9fa; border: 1px solid #dee2e6; border-radius: 3px; display: inline-block;">
             📋 No Board Selected
         </div>
         {% endif %}
+        <!-- Inline AI Board Summary with Refresh Button -->
+        <div id="board-inline-summary-row" style="width:100%; margin: 0.4rem auto 0.2rem; display:grid; grid-template-columns: 1fr 720px 1fr; align-items:start; gap:12px;">
+            <div id="summary-left-controls" style="grid-column:1; justify-self:start; display:flex; flex-direction:column; gap:8px; align-items:flex-start;">
+                <button id="summary-refresh-btn" title="Refresh summary" aria-label="Refresh summary" style="width:34px; height:34px; border-radius:6px; border:1px solid #d0d7de; background:#ffffff; color:#007bff; cursor:pointer; display:flex; align-items:center; justify-content:center; font-size:18px; line-height:1; box-shadow:0 1px 2px rgba(0,0,0,0.04);">
+                    ⟳
+                </button>
+                <div id="summary-controls" style="display:flex; flex-direction:column; gap:6px; align-items:flex-start;">
+                    <label for="summary-tone-select" style="font-size:0.85rem; color:#555;">Tone</label>
+                    <select id="summary-tone-select" style="font-size:0.85rem; padding:2px 6px; border:1px solid #d0d7de; border-radius:4px; width:150px;">
+                        <option value="neutral">Neutral</option>
+                        <option value="optimistic">Optimistic</option>
+                        <option value="cautious">Cautious</option>
+                        <option value="direct">Direct</option>
+                    </select>
+                    <label for="summary-length-select" style="font-size:0.85rem; color:#555;">Length</label>
+                    <select id="summary-length-select" style="font-size:0.85rem; padding:2px 6px; border:1px solid #d0d7de; border-radius:4px; width:150px;">
+                        <option value="brief">Brief</option>
+                        <option value="medium" selected>Medium</option>
+                        <option value="extended">Extended</option>
+                    </select>
+                </div>
+            </div>
+            <div id="board-inline-summary" style="grid-column:2; justify-self:center; padding:0.5rem 0.6rem; border-left:4px solid #007bff; background:#f9fbff; color:#222; font-size:0.98rem; line-height:1.35; border-radius:4px; display:block; width:100%;"></div>
+            <div aria-hidden="true" style="grid-column:3;"></div>
+        </div>
     </header>
 
     <!-- Main Content -->
@@ -398,8 +429,8 @@
 
     <!-- Application JavaScript Modules -->
     <script src="/static/js/custom-confirm.js?v={{ app_version }}"></script>
-    <script src="/static/js/utils.js?v={{ app_version }}"></script>
     <script src="/static/js/api.js?v={{ app_version }}"></script>
+    <script src="/static/js/utils.js?v={{ app_version }}"></script>
     <script src="/static/js/interactive-mode.js?v={{ app_version }}"></script>
     <script src="/static/js/board-management.js?v={{ app_version }}"></script>
     <script src="/static/js/thought-management.js?v={{ app_version }}"></script>

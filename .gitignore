@@ -49,3 +49,6 @@ instance/
 # Temporary files
 *.tmp
 *.bak
+
+# Ignore runtime cost logs
+costs/*.txt

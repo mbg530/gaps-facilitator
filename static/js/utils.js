@@ -172,12 +172,88 @@ function addThoughtToDOM(quadrant, thought, thoughtId) {
     dlog(`[DEBUG] Successfully added thought to ${quadrant} quadrant DOM with ID: ${thoughtId}`);
 }
 
+/**
+ * Fetch board summary (counts and recent thoughts per quadrant)
+ * @param {string|number} boardId
+ */
+async function fetchBoardSummary(boardId) {
+    if (!boardId) throw new Error('boardId required');
+    return await getJSON(`/board_summary?board_id=${encodeURIComponent(boardId)}`);
+}
+
+/**
+ * Fetch AI-generated executive summary for the board
+ * @param {string|number} boardId
+ */
+async function fetchBoardAISummary(boardId, opts = {}) {
+    if (!boardId) throw new Error('boardId required');
+    const tone = (opts.tone || getStoredTone() || 'neutral').toLowerCase();
+    const length = (opts.length || getStoredLength() || 'medium').toLowerCase();
+    const url = `/board_ai_summary?board_id=${encodeURIComponent(boardId)}&tone=${encodeURIComponent(tone)}&length=${encodeURIComponent(length)}`;
+    return await getJSON(url);
+}
+
+/**
+ * Fetch LLM-based Goals↔Status alignment
+ * @param {string|number} boardId
+ */
+async function fetchBoardAlignment(boardId) {
+    if (!boardId) throw new Error('boardId required');
+    const url = `/board_alignment?board_id=${encodeURIComponent(boardId)}`;
+    return await getJSON(url);
+}
+
+/**
+ * Debounce utility: returns a function that delays invoking fn until delay ms have elapsed
+ */
+function debounce(fn, delay = 1500) {
+    let t = null;
+    return function(...args) {
+        if (t) clearTimeout(t);
+        t = setTimeout(() => fn.apply(this, args), delay);
+    };
+}
+
+// User preference helpers for summary tone/length
+function getStoredTone() {
+    try { return localStorage.getItem('gaps-summary-tone') || null; } catch { return null; }
+}
+function getStoredLength() {
+    try { return localStorage.getItem('gaps-summary-length') || null; } catch { return null; }
+}
+function setStoredTone(val) {
+    try { localStorage.setItem('gaps-summary-tone', val); } catch {}
+}
+function setStoredLength(val) {
+    try { localStorage.setItem('gaps-summary-length', val); } catch {}
+}
+
+/**
+ * Rename a board (DB-backed). Enforces unique name per user server-side
+ * @param {string|number} boardId
+ * @param {string} newName
+ */
+async function renameBoard(boardId, newName) {
+    if (!boardId) throw new Error('boardId required');
+    if (!newName || !newName.trim()) throw new Error('newName required');
+    return await postJSON('/rename_board', { board_id: boardId, name: newName.trim() });
+}
+
 // Make functions available globally
 window.refreshQuadrants = refreshQuadrants;
 window.updateQuadrantInBackground = updateQuadrantInBackground;
 window.dlog = dlog;
 window.dwarn = dwarn;
 window.derror = derror;
+window.fetchBoardSummary = fetchBoardSummary;
+window.fetchBoardAISummary = fetchBoardAISummary;
+window.fetchBoardAlignment = fetchBoardAlignment;
+window.renameBoard = renameBoard;
+window.debounce = debounce;
+window.getStoredTone = getStoredTone;
+window.getStoredLength = getStoredLength;
+window.setStoredTone = setStoredTone;
+window.setStoredLength = setStoredLength;
 
 // Initialize utilities when DOM is loaded
 document.addEventListener('DOMContentLoaded', function() {
