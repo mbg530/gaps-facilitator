@@ -190,7 +190,21 @@ async function fetchBoardAISummary(boardId, opts = {}) {
     const tone = (opts.tone || getStoredTone() || 'neutral').toLowerCase();
     const length = (opts.length || getStoredLength() || 'medium').toLowerCase();
     const url = `/board_ai_summary?board_id=${encodeURIComponent(boardId)}&tone=${encodeURIComponent(tone)}&length=${encodeURIComponent(length)}`;
-    return await getJSON(url);
+    const summary = await getJSON(url);
+    // Schedule a debounced alignment refresh so bursts of summary clicks collapse to one call
+    try {
+        setTimeout(() => {
+            if (typeof refreshAlignmentDebounced === 'function') {
+                refreshAlignmentDebounced(boardId);
+            } else {
+                // Fallback if not yet initialized
+                fetchBoardAlignment(boardId).catch(err => dwarn('[DEBUG] Alignment refresh (fallback) failed:', err));
+            }
+        }, 0);
+    } catch (e) {
+        dwarn('[DEBUG] Could not schedule alignment refresh:', e);
+    }
+    return summary;
 }
 
 /**
@@ -213,6 +227,13 @@ function debounce(fn, delay = 1500) {
         t = setTimeout(() => fn.apply(this, args), delay);
     };
 }
+
+// Debounced alignment refresher (10s window)
+const refreshAlignmentDebounced = debounce((boardId) => {
+    fetchBoardAlignment(boardId)
+        .then(res => dlog('[DEBUG] Alignment refreshed (debounced):', res))
+        .catch(err => dwarn('[DEBUG] Alignment refresh failed:', err));
+}, 10000);
 
 // User preference helpers for summary tone/length
 function getStoredTone() {

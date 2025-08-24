@@ -45,6 +45,7 @@ def get_app_version():
 
 import gemini_api
 import openai_api
+import llm_provider
 
 # Maximum number of conversation turns to send to the LLM for context
 MAX_HISTORY_TURNS = 12
@@ -63,10 +64,8 @@ def set_sqlite_pragma(dbapi_connection, connection_record):
 
 # AI Provider Setup
 AI_PROVIDER = os.environ.get("AI_PROVIDER", "openai").lower()  # Default to OpenAI, set to 'gemini' to use Gemini
-if AI_PROVIDER == "openai":
-    ai_api = openai_api
-else:
-    ai_api = gemini_api
+# Route LLM calls through provider-agnostic facade
+ai_api = llm_provider
 
 # Helper function to generate version string with AI provider
 def get_version_with_provider():
@@ -1557,7 +1556,7 @@ def board_ai_summary():
         # Call AI to summarize
         tone = (request.args.get('tone') or 'neutral').lower()
         length = (request.args.get('length') or 'medium').lower()
-        ai_res = ai_api.summarize_board_with_openai(quadrants_data, tone=tone, length=length)
+        ai_res = ai_api.summarize_board(quadrants_data, tone=tone, length=length)
         if ai_res.get('error'):
             code = 429 if ai_res.get('code') == 'insufficient_quota' else 500
             return jsonify({'success': False, 'error': ai_res['error']}), code

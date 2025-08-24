@@ -232,15 +232,87 @@ def conversational_facilitator(prompt, conversation_history=None, quadrants=None
     if hasattr(response, 'usage'):
         input_tokens = response.usage.prompt_tokens
         output_tokens = response.usage.completion_tokens
-        calculate_cost(OPENAI_MODEL, input_tokens, output_tokens, endpoint="board_ai_summary")
+        calculate_cost(OPENAI_MODEL, input_tokens, output_tokens, endpoint="conversation")
     
-    # TRUST THE LLM: Just like the prompt testing tool, let the LLM handle everything
-    # No backend interference, no forced categorization, no JSON extraction
+    # Get model reply
     reply = response.choices[0].message.content.strip()
-    
-    # Simple approach: Just return the LLM's response as-is
-    # The LLM will handle conversation vs JSON based on the prompt instructions
-    return {'action': 'ask_clarification', 'question': reply}
+
+    # Try to parse a structured response (JSON, possibly within code fences)
+    import json as _json
+    import re as _re
+    try:
+        text_clean = reply
+        # Strip Markdown code fences if present
+        if text_clean.startswith("```"):
+            # remove first fence line and trailing fence
+            text_clean = text_clean.split('\n', 1)[1]
+            if '```' in text_clean:
+                text_clean = text_clean.split('```', 1)[0]
+        # If no outer fence, try to extract first JSON object
+        m = _re.search(r'\{[\s\S]*\}', text_clean)
+        if m:
+            text_clean = m.group(0)
+        result = _json.loads(text_clean)
+
+        # If result is a list of items, treat as classify_and_add
+        if isinstance(result, list):
+            normalized = []
+            for item in result:
+                if isinstance(item, dict):
+                    thought_txt = item.get('content') or item.get('thought') or ''
+                    quadrant = (item.get('quadrant') or 'status').lower()
+                    if thought_txt:
+                        normalized.append({'quadrant': quadrant, 'thought': thought_txt})
+                elif isinstance(item, str):
+                    normalized.append({'quadrant': 'status', 'thought': item})
+            if normalized:
+                return {'action': 'classify_and_add', 'thoughts': normalized, 'reply_text': normalized[0]['thought']}
+        # If result is a dict
+        if isinstance(result, dict):
+            # Full action dict from LLM
+            if result.get('action') == 'classify_and_add' and 'thoughts' in result:
+                normalized = []
+                for t in result.get('thoughts', []):
+                    normalized.append({
+                        'quadrant': (t.get('quadrant') or 'status').lower(),
+                        'thought': t.get('content') or t.get('thought') or ''
+                    })
+                reply_text = result.get('message') or result.get('reply_text') or (normalized[0]['thought'] if normalized else '')
+                if normalized:
+                    return {'action': 'classify_and_add', 'thoughts': normalized, 'reply_text': reply_text}
+            if result.get('action') == 'ask_clarification' and 'question' in result:
+                return {'action': 'ask_clarification', 'question': result['question']}
+            # Single thought shape
+            if 'quadrant' in result and 'thought' in result:
+                return {
+                    'action': 'classify_and_add',
+                    'thoughts': [{
+                        'quadrant': (result.get('quadrant') or 'status').lower(),
+                        'thought': result.get('thought', '')
+                    }],
+                    'reply_text': result.get('thought', '')
+                }
+            # Clarification by presence of question
+            if 'question' in result:
+                return {'action': 'ask_clarification', 'question': result['question']}
+    except Exception:
+        pass
+
+    # Heuristic fallbacks if JSON parsing fails
+    conversational_indicators = [
+        'what', 'how', 'would you', 'could you', 'what specific',
+        'for instance', 'what would', "let's", 'great!', 'looking at',
+        'question', 'clarify', '?'
+    ]
+    if any(ind in reply.lower() for ind in conversational_indicators):
+        return {'reply_text': reply}
+
+    # Otherwise, treat as a single classified thought to Status
+    return {
+        'action': 'classify_and_add',
+        'thoughts': [{'quadrant': 'status', 'thought': reply}],
+        'reply_text': reply
+    }
 
 def classify_thought_with_openai(content):
     """
@@ -275,7 +347,7 @@ def classify_thought_with_openai(content):
     if hasattr(response, 'usage'):
         input_tokens = response.usage.prompt_tokens
         output_tokens = response.usage.completion_tokens
-        calculate_cost(OPENAI_MODEL, input_tokens, output_tokens)
+        calculate_cost(OPENAI_MODEL, input_tokens, output_tokens, endpoint="classify_thought")
     
     # Extract and parse the JSON from the response
     import json
@@ -333,7 +405,7 @@ def suggest_solution_with_openai(problems, obstacles):
     if hasattr(response, 'usage'):
         input_tokens = response.usage.prompt_tokens
         output_tokens = response.usage.completion_tokens
-        calculate_cost(OPENAI_MODEL, input_tokens, output_tokens)
+        calculate_cost(OPENAI_MODEL, input_tokens, output_tokens, endpoint="suggest_solution")
     
     import json
     reply = response.choices[0].message.content
@@ -379,6 +451,11 @@ def brainstorm_with_openai(topic):
         max_tokens=256
     )
     text = response.choices[0].message.content
+    # Track cost for this API call
+    if hasattr(response, 'usage'):
+        input_tokens = response.usage.prompt_tokens
+        output_tokens = response.usage.completion_tokens
+        calculate_cost(OPENAI_MODEL, input_tokens, output_tokens, endpoint="brainstorm")
     # Parse ideas from numbered list
     ideas = [line.lstrip("1234567890. ").strip() for line in text.split('\n') if line.strip() and any(c.isalpha() for c in line)]
     if len(ideas) > 3:
@@ -412,6 +489,11 @@ def meeting_minutes_with_openai(summary):
         api_params["temperature"] = 0.2
     
     response = client.chat.completions.create(**api_params)
+    # Track cost for this API call
+    if hasattr(response, 'usage'):
+        input_tokens = response.usage.prompt_tokens
+        output_tokens = response.usage.completion_tokens
+        calculate_cost(OPENAI_MODEL, input_tokens, output_tokens, endpoint="meeting_minutes")
     text = response.choices[0].message.content.strip()
     return {'result': text}
 
@@ -428,6 +510,11 @@ def rewrite_thought_with_openai(thought):
         max_tokens=256
     )
     text = response.choices[0].message.content.strip()
+    # Track cost for this API call
+    if hasattr(response, 'usage'):
+        input_tokens = response.usage.prompt_tokens
+        output_tokens = response.usage.completion_tokens
+        calculate_cost(OPENAI_MODEL, input_tokens, output_tokens, endpoint="rewrite_thought")
     # Parse for multiple suggestions (numbered or bulleted)
     lines = [line.strip("1234567890.-• \t") for line in text.split('\n') if line.strip()]
     filtered = [l for l in lines if l and not l.lower().startswith("here are") and not l.lower().startswith("depending on")]
